@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34309.116
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "OracleAndMsSqlServerEduCode", "OracleAndMsSqlServerEduCode\OracleAndMsSqlServerEduCode.fsproj", "{B9C74BF0-A7AF-4068-BFD8-CF5A231FA8B9}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "ML_DL_SQL_Educational_Code", "OracleAndMsSqlServerEduCode\ML_DL_SQL_Educational_Code.fsproj", "{B9C74BF0-A7AF-4068-BFD8-CF5A231FA8B9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
