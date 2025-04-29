@@ -127,20 +127,26 @@ module Program =
     //insertOrUpdateTP2 () 
     //insertOrUpdateTP3 () |> ignore
 
-    let printCurrentTime () =
+    let private printCurrentTime () =
         let currentTime = DateTime.Now.ToString("HH:mm:ss:fff")
         printfn "Current time: %s" currentTime
 
+    printCurrentTime () 
+    MachineLearning.ChurnPrediction.trainAndPredict ()   
+    printCurrentTime ()
+    printfn "*************************************" 
+    printCurrentTime ()
+    MachineLearning.ChurnPredictionMLNET.trainAndPredict ()
     //solveLinearSystem ()
     printCurrentTime ()
-    MachineLearning.MachineLearning.machineLearningArray ()
-    printCurrentTime ()
-    printfn "*************************************" 
-    printCurrentTime ()
-    MachineLearning.MachineLearning.machineLearningList ()
-    printCurrentTime ()
-    printfn "*************************************" 
-    printCurrentTime ()
-    MachineLearning.MachineLearning.machineLearningMLdotNET ()
-    printCurrentTime ()
+    //MachineLearning.MachineLearning.machineLearningArray ()
+    //printCurrentTime ()
+    //printfn "*************************************" 
+    //printCurrentTime ()
+    //MachineLearning.MachineLearning.machineLearningList ()
+    //printCurrentTime ()
+    //printfn "*************************************" 
+    //printCurrentTime ()
+    //MachineLearning.MachineLearning.machineLearningMLdotNET ()
+   //printCurrentTime ()
     

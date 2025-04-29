@@ -17,12 +17,6 @@ type private DataPoint =
         X2 : float32
         Label : float32
     }
-
-[<CLIMutable>]
-type private Prediction = 
-    {
-        [<ColumnName("Score")>] Score : float
-    }
    
  type private Increment =
      | UpdateState of int  
@@ -105,6 +99,7 @@ module MachineLearning =
 
         //LBFGS Poisson Regression //Limited-memory Broyden-Fletcher-Goldfarb-Shanno algorithm
         let trainerOptions = 
+
             LbfgsPoissonRegressionTrainer.Options(
                 LabelColumnName = "Label",
                 FeatureColumnName = "Features",
@@ -115,7 +110,7 @@ module MachineLearning =
             )
 
         //LBFGS Poisson Regression //Limited-memory Broyden-Fletcher-Goldfarb-Shanno algorithm
-        let trainer_LBFGS () = mlContext.Regression.Trainers.LbfgsPoissonRegression(trainerOptions)
+        let trainer_LBFGS () = mlContext.Regression.Trainers.LbfgsPoissonRegression trainerOptions
         
         //let trainer = trainer_SDCA ()
         let trainer = trainer_SGD ()        
@@ -124,7 +119,7 @@ module MachineLearning =
         let pipeline =
             EstimatorChain().Append(featureEngineering).Append(trainer)      
         
-        let model = pipeline.Fit(dataView)
+        let model = pipeline.Fit dataView
     
         // Extract model parameters
         let linearModel = 
@@ -165,7 +160,7 @@ module MachineLearning =
         let actor = actor2 ()
 
         // Generate synthetic data: y = 2 * x1 + 3 * x2 + noise
-        let generateMockData (numSamples : int) =
+        let generateMockData numSamples =
 
             let rand = System.Random 42
             let noise = Normal(0.0, 0.1) // Gaussian noise //v ML staci takto maly noise, pri linearni regresi v realnem svete muze byt daleko vetsi
@@ -272,7 +267,7 @@ module MachineLearning =
         let actor = actor2 ()
     
         // Generate synthetic data: y = 2 * x1 + 3 * x2 + noise
-        let generateMockData (numSamples : int) =
+        let generateMockData numSamples =
     
             let rand = System.Random 42
             let noise = Normal(0.0, 0.1) // Gaussian noise //v ML staci takto maly noise, pri linearni regresi v realnem svete muze byt daleko vetsi

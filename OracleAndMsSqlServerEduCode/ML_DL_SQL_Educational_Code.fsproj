@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="MachineLearning\LogisticRegression.fs" />
     <Compile Include="MachineLearning\LinearRegression.fs" />
     <Compile Include="Helpers\Helpers.fs" />
     <Compile Include="SQL\Oracle_Example\SubQueries.fs" />
