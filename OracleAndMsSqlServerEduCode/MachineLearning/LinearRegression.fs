@@ -37,6 +37,7 @@ module MachineLearning =
     let private samples = 100000
     
     let private actor2 () =
+
         MailboxProcessor<Increment>
             .StartImmediate
                 <|
