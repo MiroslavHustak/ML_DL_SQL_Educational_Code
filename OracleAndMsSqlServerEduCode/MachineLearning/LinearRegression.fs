@@ -36,8 +36,6 @@ module MachineLearning =
     let private minIterations = 1000
     let private samples = 100000
     
-    let private reportProgress (currentProgress, increment) = currentProgress + increment
-
     let private actor2 () =
         MailboxProcessor<Increment>
             .StartImmediate
@@ -50,7 +48,7 @@ module MachineLearning =
                                match! inbox.Receive() with
                                | UpdateState i 
                                    ->
-                                   let updated = reportProgress (n, i)
+                                   let updated = (+) n i
                                    return! loop updated
 
                                | CheckState  replyChannel 
