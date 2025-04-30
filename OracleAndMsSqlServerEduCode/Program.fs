@@ -132,11 +132,11 @@ module Program =
         printfn "Current time: %s" currentTime
 
     printCurrentTime () 
-    MachineLearning.ChurnPrediction.trainAndPredict ()   
+    MachineLearning.ManualLogisticRegression.trainAndPredictManual ()   
     printCurrentTime ()
     printfn "*************************************" 
     printCurrentTime ()
-    MachineLearning.ChurnPredictionMLNET.trainAndPredict ()
+    MachineLearning.MLNETLogisticRegression.trainAndPredictML_NET ()
     //solveLinearSystem ()
     printCurrentTime ()
     //MachineLearning.MachineLearning.machineLearningArray ()

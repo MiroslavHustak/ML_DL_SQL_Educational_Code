@@ -24,11 +24,11 @@ type private DataPoint =
 
 module MachineLearning = 
 
-    let private tolerance = 1e-20
-    let private learningRate = 0.01
-    let private maxIterations = 100000
-    let private minIterations = 1000
-    let private samples = 100000
+    let [<Literal>] private tolerance = 1e-20
+    let [<Literal>] private learningRate = 0.01
+    let [<Literal>] private maxIterations = 100000
+    let [<Literal>] private minIterations = 1000
+    let [<Literal>] private samples = 100000
     
     let private actor2 () =
 
@@ -130,8 +130,8 @@ module MachineLearning =
     
         printfn "Learned parameters:"
         printfn "Bias: %f" bias
-        printfn "Weight for X1: %f" weightsArray.[0]
-        printfn "Weight for X2: %f" weightsArray.[1]
+        printfn "Weight for X1: %f" (weightsArray |> Array.item 0)
+        printfn "Weight for X2: %f" (weightsArray |> Array.item 1)
     
         // Prepare data for mean squared error calculation
         let X =
