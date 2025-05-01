@@ -131,6 +131,9 @@ module Program =
         let currentTime = DateTime.Now.ToString("HH:mm:ss:fff")
         printfn "Current time: %s" currentTime
 
+    NeuralNetworks.SingleLayerPerceptron.main ()
+    printfn "*************************************" 
+
     printCurrentTime () 
     MachineLearning.ManualLogisticRegression.trainAndPredictManual ()   
     printCurrentTime ()

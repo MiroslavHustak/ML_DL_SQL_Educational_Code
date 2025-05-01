@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="NeuralNetworks\ShallowLearning\SingleLayerPerceptron.fs" />
     <Compile Include="MachineLearning\LogisticRegression.fs" />
     <Compile Include="MachineLearning\LinearRegression.fs" />
     <Compile Include="Helpers\Helpers.fs" />
@@ -68,7 +69,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="DeepLearning\" />
+    <Folder Include="NeuralNetworks\DeepLearning\" />
   </ItemGroup>
 
 </Project>
