@@ -18,13 +18,13 @@ type private DataPoint =
         Label : float32
     }
    
- type private Increment =
-     | UpdateState of int  
-     | CheckState  of AsyncReplyChannel<int>
+type private Increment =
+    | UpdateState of int  
+    | CheckState  of AsyncReplyChannel<int>
 
 module MachineLearning = 
 
-    let [<Literal>] private tolerance = 1e-20
+    let [<Literal>] private tolerance = 1e-6
     let [<Literal>] private learningRate = 0.01
     let [<Literal>] private maxIterations = 100000
     let [<Literal>] private minIterations = 1000

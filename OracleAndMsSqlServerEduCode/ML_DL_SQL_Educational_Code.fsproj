@@ -6,7 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="NeuralNetworks\DeepLearning\File1.fs" />
+    <Compile Include="NeuralNetworks\DeepLearning\MultiLayerPerceptron - MultipleHiddenLayers.fs" />
+    <Compile Include="NeuralNetworks\ShallowLearning\MultiLayerPerceptron - OneHiddenLayer.fs" />
     <Compile Include="NeuralNetworks\ShallowLearning\SingleLayerPerceptron.fs" />
     <Compile Include="MachineLearning\LogisticRegression.fs" />
     <Compile Include="MachineLearning\LinearRegression.fs" />
