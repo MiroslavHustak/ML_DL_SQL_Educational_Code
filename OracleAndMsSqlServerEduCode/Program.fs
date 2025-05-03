@@ -131,11 +131,13 @@ module Program =
         let currentTime = DateTime.Now.ToString("HH:mm:ss:fff")
         printfn "Current time: %s" currentTime
 
+    NeuralNetworks.MLP_Churn_Synapses.run ()
+    //NeuralNetworks.MLP_XOR_Synapses.run ()
     //NeuralNetworks.SingleLayerPerceptron2.main2 ()
     printfn "*************************************" 
     //NeuralNetworks.SingleLayerPerceptron3.main3 ()
     printfn "*********"
-    NeuralNetworks.SingleLayerPerceptron4.machineLearningSLP ()
+    //NeuralNetworks.SingleLayerPerceptron4.machineLearningSLP ()
     printfn "*********"
 
     printCurrentTime () 
@@ -146,7 +148,7 @@ module Program =
     //MachineLearning.MLNETLogisticRegression.trainAndPredictML_NET ()
     //solveLinearSystem ()
     printCurrentTime ()
-    MachineLearning.MachineLearning.machineLearningArray ()
+    //MachineLearning.MachineLearning.machineLearningArray ()
     //printCurrentTime ()
     //printfn "*************************************" 
     //printCurrentTime ()

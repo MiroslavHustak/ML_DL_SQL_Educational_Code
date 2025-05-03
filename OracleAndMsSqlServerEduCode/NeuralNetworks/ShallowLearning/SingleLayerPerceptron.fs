@@ -11,23 +11,24 @@ module SingleLayerPerceptron2 =
 
     type Customer =
         {
-            MonthlyBill: float
-            ContractLength: float
-            BiasFeature: float
-            Churn: float // 1.0 = churn, 0.0 = no churn
+            MonthlyBill : float
+            ContractLength : float
+            BiasFeature : float
+            Churn : float // 1.0 = churn, 0.0 = no churn
         }
 
     let main2 () =
+
         let rnd = Random()
         let learningRate = 0.001 // Matches original code
         let initWeights = [| rnd.NextDouble() * 0.0; rnd.NextDouble() * 0.0; rnd.NextDouble() * 0. |] // 3 weights (MonthlyBill, ContractLength, BiasFeature)
         let iterations = 10000 // Matches original code
 
         // Sigmoid activation function
-        let sigmoid (x: float) = 1.0 / (1.0 + Math.Exp(-x))
+        let sigmoid (x : float) = 1.0 / (1.0 + Math.Exp(-x))
 
         // Derivative of sigmoid for backpropagation
-        let sigmoidDerivative (x: float) = x * (1.0 - x)
+        let sigmoidDerivative (x : float) = x * (1.0 - x)
 
         // Forward pass: Compute output (single neuron)
         let forward (weights: float[]) (inputs: float[]) =
@@ -40,7 +41,8 @@ module SingleLayerPerceptron2 =
             -(expected * log p + (1.0 - expected) * log (1.0 - p))
 
         // Update weights for one training example
-        let updateParameters (learningRate: float) (weights: float[]) (inputs: float[]) (expected: float) =
+        let updateParameters (learningRate : float) (weights : float[]) (inputs : float[]) (expected : float) =
+
             let output = forward weights inputs
             let error = output - expected // Gradient of loss w.r.t. output
             let delta = error * sigmoidDerivative output
@@ -49,23 +51,24 @@ module SingleLayerPerceptron2 =
 
         // Train over one epoch (all training examples)
         let trainEpoch (learningRate: float) (trainingData: (float[] * float)[]) (weights: float[]) =
-            Array.fold
-                (fun w (inputs, expected) -> updateParameters learningRate w inputs expected)
-                weights trainingData
+            trainingData
+            |> Array.fold (fun w (inputs, expected) ->  updateParameters learningRate w inputs expected) weights 
 
         // Train for multiple epochs
-        let train (epochs: int) (learningRate: float) (trainingData: (float[] * float)[]) (initWeights: float[]) =
+        let train (epochs : int) (learningRate : float) (trainingData : (float[] * float)[]) (initWeights : float[]) =
+
             let rec trainRec epoch w =
-                if epoch >= epochs then w
-                else trainRec (epoch + 1) (trainEpoch learningRate trainingData w)
+                match epoch >= epochs with
+                | true  -> w
+                | false -> trainRec (epoch + 1) (trainEpoch learningRate trainingData w)
             trainRec 0 initWeights
 
         // Predict churn (threshold at 0.5)
-        let predict (weights: float[]) (inputs: float[]) =
+        let predict (weights : float[]) (inputs : float[]) =
+
             let output = forward weights inputs
             if output >= 0.5 then 1.0 else 0.0
 
-        // Training data
         let data =
             [
                 { MonthlyBill = 50.0; ContractLength = 12.0; BiasFeature = 1.0; Churn = 0.0 }
@@ -94,18 +97,21 @@ module SingleLayerPerceptron2 =
         printfn "\nPer-Customer Results:"
         data
         |> List.iteri
-            (fun i customer ->
+            (fun i customer 
+                ->
                 let inputs = [| customer.MonthlyBill; customer.ContractLength; customer.BiasFeature |]
                 let prob = forward finalWeights inputs
                 let loss = logLoss finalWeights inputs customer.Churn
                 printfn "Customer %d:" (i + 1)
                 printfn "  Predicted Churn Probability: %.4f" prob
-                printfn "  Log Loss: %.4f" loss)
+                printfn "  Log Loss: %.4f" loss
+            )
 
         let avgLogLoss =
             data
             |> List.map (fun c -> logLoss finalWeights [| c.MonthlyBill; c.ContractLength; c.BiasFeature |] c.Churn)
             |> List.average
+
         printfn "\nAverage Log Loss: %.4f" avgLogLoss
 
         // Prediction for a new customer
@@ -136,18 +142,20 @@ module SingleLayerPerceptron3 =
         }
 
     let main3 () =
+
         // Forward pass: Compute the neuron's output (sigmoid probability)
-        let forward (predictionEngine: PredictionEngine<Customer, Prediction>) (inputs: Customer) =
+        let forward (predictionEngine : PredictionEngine<Customer, Prediction>) (inputs : Customer) =
             let prediction = predictionEngine.Predict(inputs)
             prediction.Probability // Sigmoid output (0 to 1)
 
         // Predict: Convert probability to binary label (threshold at 0.5)
-        let predict (predictionEngine: PredictionEngine<Customer, Prediction>) (inputs: Customer) =
+        let predict (predictionEngine : PredictionEngine<Customer, Prediction>) (inputs : Customer) =
             let prediction = predictionEngine.Predict(inputs)
             (prediction.Probability, prediction.PredictedLabel)
 
         // Train: Optimize the neuron's weights using ML.NET
-        let train (data: Customer list) =
+        let train (data : Customer list) =
+
             let mlContext = MLContext(seed = 42) // Fixed seed for reproducibility
             let dataView = mlContext.Data.LoadFromEnumerable data
 
@@ -172,18 +180,19 @@ module SingleLayerPerceptron3 =
                 | _ -> None
 
             match tryGetWeights () with
-            | Some (weights, bias) ->
+            | Some (weights, bias)
+                ->
                 printfn "Trained Weights (Single Neuron):"
                 printfn "  MonthlyBill: %.4f" weights.[0]
                 printfn "  ContractLength: %.4f" weights.[1]
                 printfn "  Bias: %.4f" bias
-            | None ->
+            | None
+                ->
                 printfn "Warning: Could not extract weights. Model may not support direct weight access."
 
             let predictionEngine = mlContext.Model.CreatePredictionEngine<Customer, Prediction> model
             (mlContext, model, predictionEngine)
 
-        // Dataset
         let data =
             [
                 { MonthlyBill = 50.0f; ContractLength = 12.0f; Churn = false }
@@ -201,11 +210,13 @@ module SingleLayerPerceptron3 =
 
         data
         |> List.iteri
-            (fun i customer ->
+            (fun i customer
+                ->
                 let (prob, label) = predict predictionEngine customer
                 printfn "Customer %d:" (i + 1)
                 printfn "  Predicted Churn: %b" label
-                printfn "  Churn Probability: %.4f" prob)
+                printfn "  Churn Probability: %.4f" prob
+            )
 
         // Evaluate model
         let predictions = model.Transform(mlContext.Data.LoadFromEnumerable data)
@@ -243,61 +254,78 @@ open MathNet.Numerics.Distributions
 
 module SingleLayerPerceptron4 =
 
-    // Mailbox processor (unchanged from original)
     type Message =
         | UpdateState of int
         | CheckState of AsyncReplyChannel<int>
 
     let actor2 () =
-        MailboxProcessor.Start(fun inbox ->
-            let rec loop counter =
-                async {
-                    let! msg = inbox.Receive()
-                    match msg with
-                    | UpdateState n -> return! loop (counter + n)
-                    | CheckState replyChannel ->
-                        replyChannel.Reply counter
-                        return! loop counter
-                }
-            loop 0)
+        MailboxProcessor.Start
+            (fun inbox
+                ->
+                let rec loop counter =
+                    async
+                        {
+                            match! inbox.Receive() with
+                            | UpdateState n 
+                                -> 
+                                return! loop (counter + n)
+
+                            | CheckState replyChannel 
+                                ->
+                                replyChannel.Reply counter
+                                return! loop counter
+                        }
+                loop 0
+            )
 
     let machineLearningSLP () =
+
         let actor = actor2 ()
 
         // Generate synthetic data: y = 2 * x1 + 3 * x2 + noise
         let generateMockData numSamples =
+
             let rand = Random(42)
             let noise = Normal(0.0, 0.1) // Gaussian noise
 
             List.init numSamples
-                (fun _ ->
+                (fun _
+                    ->
                     let x1 = rand.NextDouble() * 10.0
                     let x2 = rand.NextDouble() * 10.0
                     let noiseSample = noise.Sample()
                     let y = 2.0 * x1 + 3.0 * x2 + noiseSample
-                    ([1.0; x1; x2], y)) // Include bias term (1.0)
+                    ([1.0; x1; x2], y)
+                ) // Include bias term (1.0)
 
         // Forward pass: Compute the neuron's output (linear activation)
-        let forward (weights: Vector<float>) (inputs: float list) =
+        let forward (weights : Vector<float>) (inputs : float list) =
+
             let inputVector = DenseVector.ofList inputs
             weights * inputVector // Linear: w0*1 + w1*x1 + w2*x2
 
         // Mean Squared Error loss
-        let meanSquaredError (X: Matrix<float>) (y: Vector<float>) (weights: Vector<float>) =
+        let meanSquaredError (X : Matrix<float>) (y : Vector<float>) (weights : Vector<float>) =
+
             let predictions = X * weights
             let errors = predictions - y
             (errors.PointwisePower 2).Sum() / (2.0 * float X.RowCount)
 
         // Train: Optimize the neuron's weights via gradient descent
-        let train (X: Matrix<float>) (y: Vector<float>) (initialWeights: Vector<float>) (learningRate: float) (maxIterations: int) (minIterations: int) (tolerance: float) =
+        let train (X : Matrix<float>) (y : Vector<float>) (initialWeights : Vector<float>) (learningRate : float) (maxIterations : int) (minIterations : int) (tolerance : float) =
+
             let m = float X.RowCount
 
             let rec loop currentWeights previousCost iteration =
+
                 match iteration >= maxIterations with
-                | true ->
+                | true 
+                    ->
                     actor.Post <| UpdateState 1
                     currentWeights
-                | false ->   
+
+                | false 
+                    ->   
                     actor.Post <| UpdateState 1
                     let predictions : Vector<float> = X * currentWeights
                     let errors = predictions - y
@@ -306,16 +334,14 @@ module SingleLayerPerceptron4 =
                     let newCost = meanSquaredError X y newWeights
 
                     match iteration >= minIterations && abs (previousCost - newCost) < tolerance with
-                    | true -> newWeights
+                    | true  -> newWeights
                     | false -> loop newWeights newCost (iteration + 1)
 
             loop initialWeights (meanSquaredError X y initialWeights) 0
 
         // Predict: Compute the neuron's output for new inputs
-        let predict (weights: Vector<float>) (inputs: float list) =
-            forward weights inputs
+        let predict (weights : Vector<float>) (inputs : float list) = forward weights inputs
 
-        // Parameters (same as original)
         let samples = 100000
         let learningRate = 0.01
         let maxIterations = 100000
@@ -326,18 +352,19 @@ module SingleLayerPerceptron4 =
         let data = generateMockData samples
 
         let X =
-            DenseMatrix.ofRowList (
-                List.init data.Length (fun i -> fst (data |> List.item i))
-            )
+            DenseMatrix.ofRowList 
+                (
+                    List.init data.Length (fun i -> fst (data |> List.item i))
+                )
 
         let y =
-            DenseVector.ofList (
-                List.init data.Length (fun i -> snd (data |> List.item i))
-            )
+            DenseVector.ofList
+                (
+                    List.init data.Length (fun i -> snd (data |> List.item i))
+                )
 
-        // Initialize weights (same as original)
         let initialWeights = DenseVector.zero 3 // [bias; weight1; weight2]
-
+        
         // Train the neuron
         let trainedWeights = train X y initialWeights learningRate maxIterations minIterations tolerance
 
