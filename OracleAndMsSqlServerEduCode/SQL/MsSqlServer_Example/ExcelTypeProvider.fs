@@ -39,7 +39,7 @@ let internal insertOrUpdateDictionaryTSQL getConnectionTSQL closeConnectionTSQL 
             printfn "epRowsCount %i" epRowsCount
             printfn "listRangeLength %i" listRange.Length
 
-            use cmdDropSequence = new SqlCommand(List.item 0 query, connection)
+            use cmdDropSequence = new SqlCommand(List.head query, connection)
             use cmdDeleteAll = new SqlCommand(List.item 1 query, connection)
             use cmdCreateSequence = new SqlCommand(List.item 2 query, connection)
             use cmdInsert = new SqlCommand(List.item 3 query, connection)
@@ -74,7 +74,7 @@ let internal insertOrUpdateDictionaryTSQL getConnectionTSQL closeConnectionTSQL 
             (
                 let x = 
                     cmdDeleteNullRows.Parameters.Clear() // Clear parameters for each iteration                                                
-                    cmdDeleteNullRows.Parameters.AddWithValue("@table_name", List.item 0 list) |> ignore
+                    cmdDeleteNullRows.Parameters.AddWithValue("@table_name", List.head list) |> ignore
                     cmdDeleteNullRows.Parameters.AddWithValue("@primary_key_column", List.item 1 list) |> ignore
 
                     cmdDeleteNullRows.ExecuteNonQuery() 

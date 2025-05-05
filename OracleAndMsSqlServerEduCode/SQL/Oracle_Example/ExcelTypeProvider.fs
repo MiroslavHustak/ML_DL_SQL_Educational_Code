@@ -38,7 +38,7 @@ let internal insertOrUpdateDictionary getConnection closeConnection query path l
             printfn "epRowsCount %i" epRowsCount
             printfn "listRangeLength %i" listRange.Length
 
-            use cmdDropSequence = new OracleCommand(List.item 0 query, connection)
+            use cmdDropSequence = new OracleCommand(List.head query, connection)
             use cmdDeleteAll = new OracleCommand(List.item 1 query, connection)
             use cmdCreateSequence = new OracleCommand(List.item 2 query, connection)
             use cmdInsert = new OracleCommand(List.item 3 query, connection)
@@ -71,7 +71,7 @@ let internal insertOrUpdateDictionary getConnection closeConnection query path l
             (
                 let x = 
                     cmdUpdate2.Parameters.Clear() // Clear parameters for each iteration                                                
-                    cmdUpdate2.Parameters.Add(":table_name", OracleDbType.Varchar2).Value <- List.item 0 list
+                    cmdUpdate2.Parameters.Add(":table_name", OracleDbType.Varchar2).Value <- List.head list
                     cmdUpdate2.Parameters.Add(":primary_key_column", OracleDbType.Varchar2).Value <- List.item 1 list
                     cmdUpdate2.ExecuteNonQuery() 
                 x

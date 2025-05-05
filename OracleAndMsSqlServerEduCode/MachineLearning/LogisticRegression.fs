@@ -88,7 +88,7 @@ module ManualLogisticRegression =
         let weights = trainModel data
     
         printfn "Trained Weights:"
-        printfn "  MonthlyBill: %.4f" (weights |> List.item 0)
+        printfn "  MonthlyBill: %.4f" (weights |> List.head)
         printfn "  ContractLength: %.4f" (weights |> List.item 1)
         printfn "  BiasFeature: %.4f" (weights |> List.item 2)
     
@@ -195,7 +195,7 @@ module ManualLogisticRegression =
             | Some (weights, bias) 
                 ->
                 printfn "Trained Weights:"
-                printfn "  MonthlyBill: %.4f" (weights |> List.item 0)
+                printfn "  MonthlyBill: %.4f" (weights |> List.head)
                 printfn "  ContractLength: %.4f" (weights |> List.item 1)
                 printfn "  Bias: %.4f" bias
 

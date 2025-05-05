@@ -130,7 +130,7 @@ module MachineLearning =
     
         printfn "Learned parameters:"
         printfn "Bias: %f" bias
-        printfn "Weight for X1: %f" (weightsArray |> Array.item 0)
+        printfn "Weight for X1: %f" (weightsArray |> Array.head)
         printfn "Weight for X2: %f" (weightsArray |> Array.item 1)
     
         // Prepare data for mean squared error calculation

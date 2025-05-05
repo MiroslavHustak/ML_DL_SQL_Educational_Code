@@ -55,7 +55,7 @@ module MLP_XOR_Synapses =
                             ->
                             let newNet = NeuralNetwork.fit(n, learningRate, x, y)
                             let pred = NeuralNetwork.prediction(newNet, x)
-                            let loss = -((y |> List.item 0) * log((pred |> List.item 0) + 1e-15) + (1.0 - (y |> List.item 0)) * log(1.0 - (pred |> List.item 0) + 1e-15))  
+                            let loss = -((y |> List.head) * log((pred |> List.head) + 1e-15) + (1.0 - (y |> List.head)) * log(1.0 - (pred |> List.head) + 1e-15))  
                             (newNet, l + loss)
                         ) (net, 0.0)
                 let avgLoss = loss / float data.Length

@@ -130,7 +130,9 @@ module Program =
     let private printCurrentTime () =
         let currentTime = DateTime.Now.ToString("HH:mm:ss:fff")
         printfn "Current time: %s" currentTime
-
+    
+    NeuralNetworks.MLP_Churn_TorchSharp.run ()
+    printfn "*************************************" 
     NeuralNetworks.MLP_Churn_Synapses.run ()
     //NeuralNetworks.MLP_XOR_Synapses.run ()
     //NeuralNetworks.SingleLayerPerceptron2.main2 ()
