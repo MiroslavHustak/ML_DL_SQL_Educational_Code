@@ -3,6 +3,8 @@
 open System
 open Synapses
 
+//pouze vyukovy kod !!!
+
 module MLP_Churn_Synapses =
 
     type private ChurnRecord =

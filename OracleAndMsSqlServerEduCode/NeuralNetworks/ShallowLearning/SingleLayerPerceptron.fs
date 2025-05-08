@@ -7,6 +7,8 @@ open Microsoft.ML.Data
 //machine learning (ML) using logistic regression and linear regression is equivalent to a Single Layer Perceptron (SLP) 
 //with sigmoid and linear activation, respectively, differing primarily in naming and framing (neural network vs. statistical perspective).
 
+//pouze vyukovy kod !!!
+
 module SingleLayerPerceptron2 =
 
     type Customer =

@@ -5,6 +5,8 @@ open TorchSharp // a wrapper for LibTorch written in C++
 open type TorchSharp.torch.nn
 open type TorchSharp.torch.nn.functional
 
+//pouze vyukovy kod !!!
+
 module MLP_Churn_TorchSharp =
 
     type private ChurnRecord =

@@ -7,6 +7,8 @@ open Microsoft.ML.Data
 open Microsoft.ML.Trainers
 open Microsoft.ML.Calibrators
 
+//pouze vyukovy kod !!!
+
 module ManualLogisticRegression =
 
     type Customer =

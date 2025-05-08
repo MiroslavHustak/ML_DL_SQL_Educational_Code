@@ -10,6 +10,8 @@ open MathNet.Numerics.Distributions
 open MathNet.Numerics.LinearAlgebra
 open MathNet.Numerics.LinearAlgebra.Double
 
+//pouze vyukovy kod !!!
+
 [<CLIMutable>]
 type private DataPoint =
     {
