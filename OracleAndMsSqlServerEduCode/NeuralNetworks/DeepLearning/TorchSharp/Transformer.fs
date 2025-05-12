@@ -3,8 +3,11 @@
 open System
 open TorchSharp
 open TorchSharp.Modules
+
 open type torch.nn
 open type torch.nn.functional
+
+//pouze vyukovy kod pro pochopeni prednasky ohledne LLMs !!!
 
 module Transformer_TorchSharp =
 

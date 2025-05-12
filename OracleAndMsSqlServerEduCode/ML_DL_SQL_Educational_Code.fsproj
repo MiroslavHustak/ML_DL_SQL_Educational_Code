@@ -10,8 +10,8 @@
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\Transformer.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\MultipleHiddenLayerMLP.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\Synapses\MultipleHiddenLayerMLP.fs" />
-    <Compile Include="NeuralNetworks\ShallowLearning\SingleHiddenLayerMLP.fs" />
-    <Compile Include="NeuralNetworks\ShallowLearning\SingleLayerPerceptron.fs" />
+    <Compile Include="NeuralNetworks\ShallowLearning\MLNET\SingleLayerPerceptron.fs" />
+    <Compile Include="NeuralNetworks\ShallowLearning\Synapses\SingleHiddenLayerMLP.fs" />
     <Compile Include="MachineLearning\LogisticRegression.fs" />
     <Compile Include="MachineLearning\LinearRegression.fs" />
     <Compile Include="Helpers\Helpers.fs" />
