@@ -3,39 +3,45 @@
 open System
 open TorchSharp
 open TorchSharp.Modules
+
 open type torch.nn
 open type torch.nn.functional
 
 // Educational code for understanding LLMs with TorchSharp
+// Rozpracovany kod ke dni 14-05-2025
 
 module Transformer_TorchSharp =
 
     // Vocabulary and hyperparameters
-    let vocabulary = [|"The"; "Sun"; "is"; "yellow"; "black"; "sky"; "blue"; "<eos>"|]
-    let vocabSize = vocabulary.Length
-    let dModel = 64L
-    let epochs = 20000
-    let fineTuneEpochs = 2000
-    let batch = 32L
-    let fineTuneBatch = 10L
-    let headDim = 32L
-    let nHeads = 2L
-    let numLayers = 2
-    let dropoutRate = 0.1f
-    let topK = 3L
+    let private vocabulary = [|"The"; "Sun"; "is"; "yellow"; "black"; "sky"; "blue"; "<eos>"|]
+    let private vocabSize = vocabulary.Length
+    let private dModel = 64L
+    let private epochs = 20000
+    let private fineTuneEpochs = 2000
+    let private batch = 32L
+    let private fineTuneBatch = 10L
+    let private headDim = 32L
+    let private nHeads = 2L
+    let private numLayers = 2
+    let private dropoutRate = 0.1f
+    let private topK = 3L
 
     /// Generates positional encodings for token positions
     let getPositionalEncodings (seqLen: int64) (dModel: int64) : torch.Tensor =
+
         let position = torch.arange(seqLen, dtype=torch.float32).unsqueeze(1)
         let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype=torch.float32) * -(Math.Log(10000.0) / float dModel))
         
         let encodings = torch.zeros([|seqLen; dModel|])
+
         encodings.index_copy_(1, torch.arange(0L, dModel, 2L), torch.sin(position * divTerm)) |> ignore
         encodings.index_copy_(1, torch.arange(1L, dModel, 2L), torch.cos(position * divTerm)) |> ignore
+
         encodings
 
     /// Transformer Decoder Layer with causal mask and multi-head self-attention
     type TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
+
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
         
         let qkvProjection = Linear(dModel, dModel * 3L)
@@ -49,7 +55,8 @@ module Transformer_TorchSharp =
         do self.RegisterComponents()
 
         override _.forward(x) =
-            let (batch, seq, _) = x.shape.[0], x.shape.[1], x.shape.[2]
+
+            let (batch, seq, _) = x.shape |> Array.head, x.shape |> Array.item 1, x.shape |> Array.item 2
             let reshapedShape = [|batch; seq; 3L; nHeads; headDim|]
 
             // Project and reshape input for multi-head attention
@@ -74,7 +81,8 @@ module Transformer_TorchSharp =
             |> outputProjection.forward
             |> fun output -> x + output
             |> layerNorm1.forward
-            |> fun output ->
+            |> fun output 
+                ->
                 output
                 |> feedForward1.forward
                 |> gelu
@@ -84,7 +92,9 @@ module Transformer_TorchSharp =
 
     // MiniTransformer model with multiple decoder layers
     type Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int) as self =
+
         inherit Module<torch.Tensor, torch.Tensor>("Transformer")
+
         // Token embedding layer
         let embedding = Embedding(vocabSize, dModel)
         // Positional encoding (precomputed for max sequence length)
@@ -92,7 +102,8 @@ module Transformer_TorchSharp =
         // Dropout for regularization
         let dropout = Dropout(float dropoutRate)
         // Stack of transformer decoder layers
-        let decoderLayers = ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>([| for _ in 1..numLayers -> new TransformerDecoderLayer(dModel, nHeads, dropoutRate) :> torch.nn.Module<torch.Tensor, torch.Tensor> |])
+        //let decoderLayers = ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>([| for _ in 1..numLayers -> new TransformerDecoderLayer(dModel, nHeads, dropoutRate) :> torch.nn.Module<torch.Tensor, torch.Tensor> |])
+        let decoderLayers = ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>(List.init numLayers (fun _ -> new TransformerDecoderLayer(dModel, nHeads, dropoutRate) :> torch.nn.Module<torch.Tensor, torch.Tensor>) |> List.toArray)
         // Final linear output layer
         let outputLayer = Linear(dModel, vocabSize)
         // Final layer normalization
@@ -101,8 +112,9 @@ module Transformer_TorchSharp =
         do self.RegisterComponents()
 
         override _.forward(x) =
+
             let emb = embedding.forward(x) // Convert token indices to embeddings: [batch, seq, dModel]
-            let seqLen = x.shape.[1]
+            let seqLen = x.shape |> Array.item 1
             // Add positional encodings (slice to match sequence length and move to input device)
             let embWithPos = emb + posEnc.narrow(0L, 0L, seqLen).``to``(x.device)
             // Apply dropout to embeddings
@@ -116,32 +128,44 @@ module Transformer_TorchSharp =
 
     // Training loop for pre-training or fine-tuning with perplexity evaluation
     let trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer) (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
-        [0..maxEpochs-1] |> List.iter (fun epoch ->
-            optimizer.zero_grad() // Reset gradients
-            use output = model.forward(input) // Forward pass: compute logits [batch, seq, vocabSize]
-            // Compute cross-entropy loss
-            use loss = lossFn.forward(output.view(-1L, vocabSize), target.view(-1L))
-            // Compute perplexity
-            let perplexity = torch.exp(loss).item<float32>()
-            // Backpropagation with error handling
-            try
-                loss.backward() // Backpropagation: compute loss gradients
-                // Clip gradients to stabilize backpropagation
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore
-            with
-            | :? System.StackOverflowException as ex ->
-                printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch + 1) ex.Message
-                Console.ReadLine() |> ignore
-            optimizer.step() |> ignore // Update model weights
-            //printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase (epoch + 1) (loss.item<float32>()) perplexity
-            // Trigger garbage collection to free memory
-            System.GC.Collect()
-        )
+       
+        [ 0 .. maxEpochs-1 ]
+        |> List.iter
+            (fun epoch
+                ->
+                optimizer.zero_grad() // Reset gradients
+
+                use output = model.forward(input) // Forward pass: compute logits [batch, seq, vocabSize]
+                // Compute cross-entropy loss
+                use loss = lossFn.forward(output.view(-1L, vocabSize), target.view(-1L))
+                // Compute perplexity
+                let perplexity = torch.exp(loss).item<float32>()
+                // Backpropagation with error handling
+
+                try
+                    loss.backward() // Backpropagation: compute loss gradients
+                    // Clip gradients to stabilize backpropagation
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore
+                with
+                | :? System.StackOverflowException as ex ->
+                    printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch + 1) ex.Message
+                    Console.ReadLine() |> ignore
+
+                optimizer.step() |> ignore // Update model weights
+                //printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase (epoch + 1) (loss.item<float32>()) perplexity
+                // Trigger garbage collection to free memory
+                System.GC.Collect()
+            )
 
     // Inference loop with top-k sampling
     let rec generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) steps maxSteps acc =
+
         match steps with
-        | s when s >= maxSteps -> acc
+        | s 
+            when s >= maxSteps 
+            -> 
+            acc
+
         | _ ->
             let _ = torch.no_grad() // Disable gradient computation for inference
             let logits: torch.Tensor = model.forward(inputSeq) // Compute logits: [1, seq, vocabSize]
@@ -157,12 +181,14 @@ module Transformer_TorchSharp =
             let newAcc: int64 list = nextToken :: acc // Accumulate token indices
             // Append new token to input sequence
             let newInput: torch.Tensor = torch.cat([|inputSeq; torch.tensor([|nextToken|], device=inputSeq.device).unsqueeze(0L)|], dim=1L) // [1, seq+1]
+            
             generate model newInput (steps + 1) maxSteps newAcc
 
     // Main program
     let main () =
+
         // Select device (CPU or CUDA)
-        let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
+        let device = match torch.cuda.is_available() with true -> torch.CUDA | false -> torch.CPU
         printfn "Using device: %A" device
 
         // Initialize model, loss function, and optimizer
@@ -171,25 +197,33 @@ module Transformer_TorchSharp =
         use optimizer = torch.optim.Adam(model.parameters(), lr=0.0001) // Adam optimizer for pre-training (lower LR)
 
         // Data preparation: pre-training input and target sequences (32 examples)
-        let inputData = Array2D.init 32 3 (fun i k ->
-            match (i, k) with
-            // "The Sun is" -> "is yellow <eos>" (2600 examples instead of 20)
-            | i, k when i < 2600 -> [|0L; 1L; 2L|].[k]
-            // "The sky is" -> "is blue <eos>" (5 examples instead of 10)
-            | i, k when i >= 26 && i < 31 -> [|0L; 5L; 2L|].[k]
-            // "The Sun is" -> "is black <eos>" (1 example, kept the same)
-            | i, k when i = 31 -> [|0L; 1L; 2L|].[k]
-            | _ -> failwith "Invalid index")
+        let inputData = 
+            Array2D.init 32 3
+                (fun i k 
+                    ->
+                    match (i, k) with
+                    // "The Sun is" -> "is yellow <eos>" (2600 examples instead of 20)
+                    | i, k when i < 2600 -> [|0L; 1L; 2L|] |> Array.item k
+                    // "The sky is" -> "is blue <eos>" (5 examples instead of 10)
+                    | i, k when i >= 26 && i < 31 -> [|0L; 5L; 2L|] |> Array.item k
+                    // "The Sun is" -> "is black <eos>" (1 example, kept the same)
+                    | i, k when i = 31 -> [|0L; 1L; 2L|] |> Array.item k
+                    | _ -> failwith "Invalid index"
+                )
         
-        let targetData = Array2D.init 32 3 (fun i k ->
-            match (i, k) with
-            // "The Sun is" -> "is yellow <eos>" (26 examples instead of 20)
-            | i, k when i < 26 -> [|2L; 3L; 7L|].[k]
-            // "The sky is" -> "is blue <eos>" (5 examples instead of 10)
-            | i, k when i >= 26 && i < 31 -> [|2L; 6L; 7L|].[k]
-            // "The Sun is" -> "is black <eos>" (1 example, kept the same)
-            | i, k when i = 31 -> [|2L; 4L; 7L|].[k]
-            | _ -> failwith "Invalid index")        
+        let targetData = 
+            Array2D.init 32 3
+                (fun i k
+                    ->
+                    match (i, k) with
+                    // "The Sun is" -> "is yellow <eos>" (26 examples instead of 20)
+                    | i, k when i < 26 -> [|2L; 3L; 7L|] |> Array.item k
+                    // "The sky is" -> "is blue <eos>" (5 examples instead of 10)
+                    | i, k when i >= 26 && i < 31 -> [|2L; 6L; 7L|] |> Array.item k
+                    // "The Sun is" -> "is black <eos>" (1 example, kept the same)
+                    | i, k when i = 31 -> [|2L; 4L; 7L|] |> Array.item k
+                    | _ -> failwith "Invalid index"
+                )        
 
         use input = torch.tensor(inputData, device=device) // [32, 3]
         use target = torch.tensor(targetData, device=device) // [32, 3]
@@ -203,10 +237,9 @@ module Transformer_TorchSharp =
         //torch.save(model.state_dict(), "transformer_model.pt")
 
         // Fine-tuning: prepare a small dataset to emphasize "the Sun is" -> "is yellow <eos>"
-        let fineTuneInputData = Array2D.init 10 3 (fun i k ->
-            [|0L; 1L; 2L|].[k]) // "the Sun is" for all 10 examples
-        let fineTuneTargetData = Array2D.init 10 3 (fun i k ->
-            [|2L; 3L; 7L|].[k]) // "is yellow <eos>" for all 10 examples
+        let fineTuneInputData = Array2D.init 10 3 (fun i k -> [|0L; 1L; 2L|] |> Array.item k) // "the Sun is" for all 10 examples
+        let fineTuneTargetData = Array2D.init 10 3 (fun i k -> [|2L; 3L; 7L|] |> Array.item k) // "is yellow <eos>" for all 10 examples
+        
         use fineTuneInput = torch.tensor(fineTuneInputData, device=device) // [10, 3]
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device=device) // [10, 3]
 
@@ -226,8 +259,8 @@ module Transformer_TorchSharp =
         printf "Generated sequence (token IDs): "
         let generated = generate model inputSeq 0 2 [] |> List.rev // Generate 2 tokens
         generated |> List.iter (printf "%d ")
-        printfn ""
+        printfn "\n"
         // Map token IDs to words
         printf "Generated sequence (words): "
-        generated |> List.iter (fun id -> printf "%s " vocabulary.[int id])
-        printfn ""
+        generated |> List.iter (fun id -> printf "%s " (vocabulary |> Array.item (int id)))
+        printfn "\n"
