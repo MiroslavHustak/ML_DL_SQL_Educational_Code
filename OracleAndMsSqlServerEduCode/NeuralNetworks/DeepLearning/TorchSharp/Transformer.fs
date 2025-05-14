@@ -12,77 +12,75 @@ module Transformer_TorchSharp =
 
     // Vocabulary and hyperparameters
     let vocabulary = [|"The"; "Sun"; "is"; "yellow"; "black"; "sky"; "blue"; "<eos>"|]
-    let vocabSize = vocabulary.Length // 8
-    let dModel = 64L // Embedding dimension (reduced)
-    let epochs = 10000 // Number of pre-training epochs
-    let fineTuneEpochs = 1000 // Number of fine-tuning epochs
-    let batch = 32L // Batch size for pre-training
-    let fineTuneBatch = 10L // Batch size for fine-tuning
-    let headDim = 32L // Dimension per attention head (64 / 2)
-    let nHeads = 2L // Number of attention heads (reduced)
-    let numLayers = 2 // Number of transformer decoder layers
-    let dropoutRate = 0.1f // Dropout rate for regularization
-    let topK = 3L // Top-k sampling parameter
+    let vocabSize = vocabulary.Length
+    let dModel = 64L
+    let epochs = 20000
+    let fineTuneEpochs = 2000
+    let batch = 32L
+    let fineTuneBatch = 10L
+    let headDim = 32L
+    let nHeads = 2L
+    let numLayers = 2
+    let dropoutRate = 0.1f
+    let topK = 3L
 
-    // Positional encoding for token positions
+    /// Generates positional encodings for token positions
     let getPositionalEncodings (seqLen: int64) (dModel: int64) : torch.Tensor =
-        let pos = torch.arange(seqLen, dtype=torch.float32).unsqueeze(1) // [seqLen, 1]
-        let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype=torch.float32) * -(Math.Log(10000.0) / float dModel)) // [dModel/2]
-        let pe = torch.zeros([|seqLen; dModel|]) // [seqLen, dModel]
-        pe.index_copy_(1, torch.arange(0L, dModel, 2L), torch.sin(pos * divTerm)) |> ignore
-        pe.index_copy_(1, torch.arange(1L, dModel, 2L), torch.cos(pos * divTerm)) |> ignore
-        pe
+        let position = torch.arange(seqLen, dtype=torch.float32).unsqueeze(1)
+        let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype=torch.float32) * -(Math.Log(10000.0) / float dModel))
+        
+        let encodings = torch.zeros([|seqLen; dModel|])
+        encodings.index_copy_(1, torch.arange(0L, dModel, 2L), torch.sin(position * divTerm)) |> ignore
+        encodings.index_copy_(1, torch.arange(1L, dModel, 2L), torch.cos(position * divTerm)) |> ignore
+        encodings
 
-    // Transformer Decoder Layer with causal mask and multi-head self-attention
+    /// Transformer Decoder Layer with causal mask and multi-head self-attention
     type TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
-        // Linear layers for projecting Query, Key, Value vectors
-        let qkvProj = Linear(dModel, dModel * 3L)
-        // Linear layer for attention output projection
-        let outputProj = Linear(dModel, dModel)
-        // Feed-forward network layers
-        let ff1 = Linear(dModel, dModel * 4L)
-        let ff2 = Linear(dModel * 4L, dModel)
-        // Layer normalization for stabilizing training
-        let norm1 = LayerNorm([|dModel|])
-        let norm2 = LayerNorm([|dModel|])
-        // Dropout for regularization
+        
+        let qkvProjection = Linear(dModel, dModel * 3L)
+        let outputProjection = Linear(dModel, dModel)
+        let feedForward1 = Linear(dModel, dModel * 4L)
+        let feedForward2 = Linear(dModel * 4L, dModel) 
+        let layerNorm1 = LayerNorm([|dModel|])
+        let layerNorm2 = LayerNorm([|dModel|])
         let dropout = Dropout(float dropoutRate)
 
         do self.RegisterComponents()
 
         override _.forward(x) =
             let (batch, seq, _) = x.shape.[0], x.shape.[1], x.shape.[2]
-            let newShape = [|batch; seq; 3L; nHeads; headDim|] // [batch, seq, 3, nHeads, headDim]
+            let reshapedShape = [|batch; seq; 3L; nHeads; headDim|]
 
-            use qkv = qkvProj.forward(x) // Project input to Query, Key, Value vectors
-            use qkvReshaped = qkv.view(newShape) // Reshape to separate Q, K, V
-            use q = qkvReshaped.select(2, 0L).transpose(1, 2) // [batch, nHeads, seq, headDim]
-            use k = qkvReshaped.select(2, 1L).transpose(1, 2) // [batch, nHeads, seq, headDim]
-            use v = qkvReshaped.select(2, 2L).transpose(1, 2) // [batch, nHeads, seq, headDim]
-            use scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim) // Compute attention scores: [batch, nHeads, seq, seq]
-            // Apply causal mask to hide future tokens
+            // Project and reshape input for multi-head attention
+            use qkv = qkvProjection.forward(x)
+            use qkvReshaped = qkv.view(reshapedShape)
+            use q = qkvReshaped.select(2, 0L).transpose(1, 2)
+            use k = qkvReshaped.select(2, 1L).transpose(1, 2)
+            use v = qkvReshaped.select(2, 2L).transpose(1, 2)
+
+            // Scaled Dot-Product Attention with causal masking
+            use scores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim)
             use mask = torch.triu(torch.ones([|seq; seq|], device=scores.device), diagonal=1L).to_type(torch.ScalarType.Bool)
             use maskedScores = scores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
-            // Normalize attention scores to weights using softmax
-            use attentionWeights = softmax(maskedScores, -1L)
-            // Apply dropout to attention weights
-            use attentionWeights = dropout.forward(attentionWeights)
-            // Compute context vectors: weighted sum of Value vectors
-            use context = torch.matmul(attentionWeights, v) // [batch, nHeads, seq, headDim]
-            // Reshape and project context vectors
-            use context = context.transpose(1, 2).contiguous().view(batch, seq, dModel) // [batch, seq, dModel]
+
+            // Apply softmax and dropout
+            use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
+            use context = torch.matmul(attentionWeights, v)
+            use context = context.transpose(1, 2).contiguous().view(batch, seq, dModel)
+
+            // Apply final linear transformation and residual connection
             context
-            |> outputProj.forward // Linear projection of attention output
-            |> fun output -> x + output // Residual connection
-            |> norm1.forward // Layer normalization
+            |> outputProjection.forward
+            |> fun output -> x + output
+            |> layerNorm1.forward
             |> fun output ->
                 output
-                |> ff1.forward // First feed-forward layer
-                |> gelu // GELU activation
-                |> ff2.forward // Second feed-forward layer
-                |> fun ffOutput -> output + ffOutput // Residual connection
-                |> norm2.forward // Layer normalization
+                |> feedForward1.forward
+                |> gelu
+                |> feedForward2.forward
+                |> fun ffOutput -> output + ffOutput
+                |> layerNorm2.forward
 
     // MiniTransformer model with multiple decoder layers
     type Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int) as self =
@@ -117,10 +115,8 @@ module Transformer_TorchSharp =
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32) // [batch, seq, vocabSize]
 
     // Training loop for pre-training or fine-tuning with perplexity evaluation
-    let rec trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer) (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) epoch maxEpochs phase =
-        match epoch with
-        | e when e >= maxEpochs -> ()
-        | _ ->
+    let trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer) (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
+        [0..maxEpochs-1] |> List.iter (fun epoch ->
             optimizer.zero_grad() // Reset gradients
             use output = model.forward(input) // Forward pass: compute logits [batch, seq, vocabSize]
             // Compute cross-entropy loss
@@ -130,18 +126,17 @@ module Transformer_TorchSharp =
             // Backpropagation with error handling
             try
                 loss.backward() // Backpropagation: compute loss gradients
+                // Clip gradients to stabilize backpropagation
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore
             with
             | :? System.StackOverflowException as ex ->
                 printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch + 1) ex.Message
-                // Trigger garbage collection to free memory
-                System.GC.Collect()
-                
+                Console.ReadLine() |> ignore
             optimizer.step() |> ignore // Update model weights
             //printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase (epoch + 1) (loss.item<float32>()) perplexity
             // Trigger garbage collection to free memory
             System.GC.Collect()
-
-            trainEpoch model optimizer lossFn input target (epoch + 1) maxEpochs phase
+        )
 
     // Inference loop with top-k sampling
     let rec generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) steps maxSteps acc =
@@ -178,27 +173,23 @@ module Transformer_TorchSharp =
         // Data preparation: pre-training input and target sequences (32 examples)
         let inputData = Array2D.init 32 3 (fun i k ->
             match (i, k) with
-            // "the Sun is" -> "is yellow <eos>" (20 examples)
-            | i, k when i < 20 -> [|0L; 1L; 2L|].[k]
-            // "the sky is" -> "is blue <eos>" (10 examples)
-            | i, k when i >= 20 && i < 30 -> [|0L; 5L; 2L|].[k]
-            // "the Sun is" -> "is black <eos>" (1 example)
-            | i, k when i = 30 -> [|0L; 1L; 2L|].[k]
-            // "the sky is" -> "is black <eos>" (1 example)
-            | i, k when i = 31 -> [|0L; 5L; 2L|].[k]
+            // "The Sun is" -> "is yellow <eos>" (2600 examples instead of 20)
+            | i, k when i < 2600 -> [|0L; 1L; 2L|].[k]
+            // "The sky is" -> "is blue <eos>" (5 examples instead of 10)
+            | i, k when i >= 26 && i < 31 -> [|0L; 5L; 2L|].[k]
+            // "The Sun is" -> "is black <eos>" (1 example, kept the same)
+            | i, k when i = 31 -> [|0L; 1L; 2L|].[k]
             | _ -> failwith "Invalid index")
-
+        
         let targetData = Array2D.init 32 3 (fun i k ->
             match (i, k) with
-            // "the Sun is" -> "is yellow <eos>" (20 examples)
-            | i, k when i < 20 -> [|2L; 3L; 7L|].[k]
-            // "the sky is" -> "is blue <eos>" (10 examples)
-            | i, k when i >= 20 && i < 30 -> [|2L; 6L; 7L|].[k]
-            // "the Sun is" -> "is black <eos>" (1 example)
-            | i, k when i = 30 -> [|2L; 4L; 7L|].[k]
-            // "the sky is" -> "is black <eos>" (1 example)
+            // "The Sun is" -> "is yellow <eos>" (26 examples instead of 20)
+            | i, k when i < 26 -> [|2L; 3L; 7L|].[k]
+            // "The sky is" -> "is blue <eos>" (5 examples instead of 10)
+            | i, k when i >= 26 && i < 31 -> [|2L; 6L; 7L|].[k]
+            // "The Sun is" -> "is black <eos>" (1 example, kept the same)
             | i, k when i = 31 -> [|2L; 4L; 7L|].[k]
-            | _ -> failwith "Invalid index")
+            | _ -> failwith "Invalid index")        
 
         use input = torch.tensor(inputData, device=device) // [32, 3]
         use target = torch.tensor(targetData, device=device) // [32, 3]
@@ -206,16 +197,16 @@ module Transformer_TorchSharp =
         // Pre-training: train the model
         printfn "Starting pre-training..."
         model.train()
-        trainEpoch model optimizer lossFn input target 0 epochs "Pre-training"
+        trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
         // Save the pre-trained model
         //torch.save(model.state_dict(), "transformer_model.pt")
 
-        // Fine-tuning: prepare a small dataset to emphasize "the sky is" -> "is blue <eos>"
+        // Fine-tuning: prepare a small dataset to emphasize "the Sun is" -> "is yellow <eos>"
         let fineTuneInputData = Array2D.init 10 3 (fun i k ->
-            [|0L; 5L; 2L|].[k]) // "the sky is" for all 10 examples
+            [|0L; 1L; 2L|].[k]) // "the Sun is" for all 10 examples
         let fineTuneTargetData = Array2D.init 10 3 (fun i k ->
-            [|2L; 6L; 7L|].[k]) // "is blue <eos>" for all 10 examples
+            [|2L; 3L; 7L|].[k]) // "is yellow <eos>" for all 10 examples
         use fineTuneInput = torch.tensor(fineTuneInputData, device=device) // [10, 3]
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device=device) // [10, 3]
 
@@ -223,7 +214,7 @@ module Transformer_TorchSharp =
         printfn "Starting fine-tuning..."
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr=0.0001) // Lower learning rate for fine-tuning
         model.train()
-        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget 0 fineTuneEpochs "Fine-tuning"
+        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
         // Save the fine-tuned model
         //torch.save(model.state_dict(), "transformer_model_finetuned.pt")
