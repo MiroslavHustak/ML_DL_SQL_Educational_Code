@@ -133,24 +133,24 @@ module Program =
     
     NeuralNetworks.Transformer_TorchSharp.main ()
     //NeuralNetworks.MLP_Churn_TorchSharp.run ()
-    printfn "*************************************" 
+    //printfn "*************************************" 
     //NeuralNetworks.MLP_Churn_Synapses.run ()
     //NeuralNetworks.MLP_XOR_Synapses.run ()
     //NeuralNetworks.SingleLayerPerceptron2.main2 ()
-    printfn "*************************************" 
+    //printfn "*************************************" 
     //NeuralNetworks.SingleLayerPerceptron3.main3 ()
-    printfn "*********"
+    //printfn "*********"
     //NeuralNetworks.SingleLayerPerceptron4.machineLearningSLP ()
-    printfn "*********"
+    //printfn "*********"
 
-    printCurrentTime () 
+    //printCurrentTime () 
     //MachineLearning.ManualLogisticRegression.trainAndPredictManual ()   
-    printCurrentTime ()
-    printfn "*************************************" 
-    printCurrentTime ()
+    //printCurrentTime ()
+    //printfn "*************************************" 
+    //printCurrentTime ()
     //MachineLearning.MLNETLogisticRegression.trainAndPredictML_NET ()
     //solveLinearSystem ()
-    printCurrentTime ()
+    //printCurrentTime ()
     //MachineLearning.MachineLearning.machineLearningArray ()
     //printCurrentTime ()
     //printfn "*************************************" 
