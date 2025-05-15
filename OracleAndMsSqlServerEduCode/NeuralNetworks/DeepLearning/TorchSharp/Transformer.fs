@@ -95,7 +95,7 @@ module Transformer_TorchSharp =
         let posEnc = getPositionalEncodings 10L dModel   //jen priprava, zatim jsou tam jen nahodna cisla
         // Remark: Positional encodings are added to token embeddings to preserve sequence order, complementing tokenization.
 
-        //tohle neni embedding, ale musi to tady byt quli self.RegisterComponents()
+        //tohle neni embedding, ale musi to tady byt quli registrace v self.RegisterComponents(), ktera musi byt tam, kde je 
         let dropout = Dropout(float dropoutRate)
         let decoderLayers = ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>(List.init numLayers (fun _ -> new TransformerDecoderLayer(dModel, nHeads, dropoutRate) :> torch.nn.Module<torch.Tensor, torch.Tensor>) |> List.toArray)
         let outputLayer = Linear(dModel, vocabSize)
@@ -116,9 +116,15 @@ module Transformer_TorchSharp =
             //The addition (emb + posEnc) combines token embeddings with positional information, 
             //enabling the Transformer to distinguish token positions (e.g., "Sun" in position 1 vs. position 2)            
 
+            //viz take attention head - dropout zabranuje overfitting (coz moje manualni tokenizace urcite dela) natalie.clanweb.eu //nahodne vynulovani nekterych neuronu
+            //pouze pri training, ne pro inference (tam musi byt droput vynulovany
             let embWithPos = dropout.forward(embWithPos)
+
+            //sbaleni vice hidden layers??? TODO zjistit
             let dec = Seq.fold (fun x (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward(x)) embWithPos decoderLayers
-            let normOut = norm.forward(dec)
+
+            let normOut = norm.forward(dec)  //zjistit, jestli je to final normalization layer
+
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32) // [batch, seq, vocabSize]
 
     // Training loop for pre-training or fine-tuning with perplexity evaluation
