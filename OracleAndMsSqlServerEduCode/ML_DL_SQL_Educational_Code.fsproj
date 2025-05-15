@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\CustomTokenizer.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\Transformer.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\MultipleHiddenLayerMLP.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\Synapses\MultipleHiddenLayerMLP.fs" />

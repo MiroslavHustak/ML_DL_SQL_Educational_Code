@@ -265,7 +265,7 @@ module MachineLearning =
         actor.Dispose()
 
     let machineLearningList () =
-
+    
         let actor = actor2 ()
     
         // Generate synthetic data: y = 2 * x1 + 3 * x2 + noise
@@ -285,10 +285,11 @@ module MachineLearning =
                 )           
            
         let meanSquaredError (X : Matrix<float>) (y : Vector<float>) (theta : Vector<float>) =
-
-            let predictions = X * theta
-            let errors = predictions - y
-            (errors.PointwisePower 2).Sum() / (2.0 * float X.RowCount) //mean
+            let predictions = X * theta // Forward pass: Compute predictions (X * theta)
+            let errors = predictions - y // Compute errors for loss calculation
+            (errors.PointwisePower 2).Sum() / (2.0 * float X.RowCount) // Mean squared error (MSE) loss
+            // Remark: The loss function (MSE) is used in backpropagation to compute gradients.
+            // The forward pass (predictions = X * theta) sets up the computation graph needed for backpropagation.
               
         let gradientDescent (X : Matrix<float>) (y : Vector<float>) (theta : Vector<float>) (alpha : float) (maxIterations : int) (minIterations : int) (tolerance : float) =
         
@@ -300,21 +301,28 @@ module MachineLearning =
                     ->
                     actor.Post <| UpdateState 1
                     currentTheta
-
+    
                 | false
                     ->
                     actor.Post <| UpdateState 1
-                    let predictions : Vector<float> = X * currentTheta
-                    let errors = predictions - y
-                    let gradient = (X.Transpose() * errors) / m
-                    let newTheta = currentTheta - alpha * gradient
-                    let newCost = meanSquaredError X y newTheta
+                    let predictions : Vector<float> = X * currentTheta // Forward pass: Compute predictions
+                    // Remark: This forward pass is the first step of backpropagation, computing the model's output (X * theta) needed for the loss and gradient.
+                    let errors = predictions - y // Compute errors (difference between predictions and true values)
+                    // Remark: The errors (predictions - y) are used in backpropagation to compute the gradient of the loss with respect to predictions.
+                    let gradient = (X.Transpose() * errors) / m // Compute gradient of loss w.r.t. theta
+                    // Remark: This is the core of backpropagation: computing the gradient of the loss w.r.t. theta using the chain rule.
+                    // The gradient is calculated as (1/m) * X^T * (predictions - y), propagating the error backward to the parameters.
+                    let newTheta = currentTheta - alpha * gradient // Update parameters using gradient descent
+                    // Remark: This step uses the gradients from backpropagation to update theta, completing one iteration of optimization.
+                    let newCost = meanSquaredError X y newTheta // Compute new loss for convergence check
         
                     match iteration >= minIterations && abs (previousCost - newCost) < tolerance with
                     | true  -> newTheta
                     | false -> loop newTheta newCost (iteration + 1)        
                     
             loop theta (meanSquaredError X y theta) 0     
+            // Remark: The gradientDescent function implements backpropagation iteratively.
+            // Each iteration involves a forward pass (computing predictions), a backward pass (computing gradients via the chain rule), and a parameter update.
     
         let data = generateMockData samples 
     
@@ -331,6 +339,7 @@ module MachineLearning =
         let initialTheta = DenseVector.zero 3 // [bias; weight1; weight2]
            
         let theta = gradientDescent X y initialTheta learningRate maxIterations minIterations tolerance
+        // Remark: The call to gradientDescent triggers the backpropagation process, optimizing theta by repeatedly computing gradients and updating parameters.
             
         // Print results
         printfn "Learned parameters: %A" theta
@@ -339,12 +348,12 @@ module MachineLearning =
             
         // Make a prediction for a new input [1.0; 5.0; 5.0]
         let newInput = DenseVector.ofList [1.0; 5.0; 5.0]
-        let prediction = newInput * theta
+        let prediction = newInput * theta // Forward pass for prediction
+        // Remark: This is a forward pass, similar to the one used in backpropagation, but here it's for inference, not gradient computation.
         
         printfn "Prediction for input [1.0; 5.0; 5.0]: %f" prediction
-
+    
         actor.Dispose()
-
 
     //********************************************************************************
        
