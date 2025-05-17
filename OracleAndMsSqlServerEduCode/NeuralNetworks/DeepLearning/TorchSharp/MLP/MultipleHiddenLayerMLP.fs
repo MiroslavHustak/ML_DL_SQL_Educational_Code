@@ -165,10 +165,14 @@ module MLP_Churn_TorchSharp =
         printfn "  Area Under ROC Curve (AUC): %.4f" auc
 
         printfn "\nChurn Predictions:"
-        data |> List.iter (fun r -> 
-            let (prob, yPred) = predict trainedModel r.MonthlyBill r.ContractLength r.BiasFeature
-            printfn "Input: [Bill=%.0f, Length=%.0f], True: %.0f, Predicted: %.0f, Probability: %.4f"
-                r.MonthlyBill r.ContractLength r.Churn yPred prob)
+        data 
+        |> List.iter 
+            (fun r 
+                -> 
+                let (prob, yPred) = predict trainedModel r.MonthlyBill r.ContractLength r.BiasFeature
+                printfn "Input: [Bill=%.0f, Length=%.0f], True: %.0f, Predicted: %.0f, Probability: %.4f"
+                    r.MonthlyBill r.ContractLength r.Churn yPred prob
+            )
 
         let testCustomer = { MonthlyBill = 75.0f; ContractLength = 8.0f; BiasFeature = 1.0f; Churn = 0.0f }
         let (testProb, testLabel) = predict trainedModel testCustomer.MonthlyBill testCustomer.ContractLength testCustomer.BiasFeature
