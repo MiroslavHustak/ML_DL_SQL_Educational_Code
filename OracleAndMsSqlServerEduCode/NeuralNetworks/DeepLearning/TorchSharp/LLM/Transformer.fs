@@ -405,11 +405,11 @@ module Transformer_TorchSharp =
         model.eval()  // When model.eval() is called, the Dropout module’s forward method does not apply dropout (i.e., it effectively sets the dropout rate to zero for that pass).
         //This ensures that the Dropout modules in both the TransformerDecoderLayer (applied to attention weights) and the Transformer (applied to embeddings with positional encodings) do not drop any activations, making the model’s output deterministic during inference.
                     
-        use inputSeq = torch.tensor([|0L; 1L; 2L|], device=device).unsqueeze(0L) // [1, 3]
+        use inputSeq = torch.tensor([|0L; 1L; 2L|], device=device).unsqueeze 0L // [1, 3]
         // Remark: Data preparation: Creates an input sequence for inference ("The Sun is" = [0, 1, 2]) as token indices.
         
         printf "Generated sequence (token IDs): "
-        let generated = generate model inputSeq 0 2 [] contextSize 0.7f 50L "top-k" |> List.rev // Generate 2 tokens with temp=0.7, topK=50, top-k sampling
+        let generated = generate model inputSeq 0 2 [] contextSize 0.7f 3L "top-k" |> List.rev // Generate 2 tokens with temp=0.7, topK=3, top-k sampling
         generated |> List.iter (printf "%d ")
         printfn "\n"
         
