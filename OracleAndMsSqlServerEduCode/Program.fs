@@ -156,6 +156,9 @@ module Program =
     printfn "*************************************" 
     printCurrentTime ()
     MachineLearning.TorchLinearRegression.torchSharpLR()
+    printfn "*************************************" 
+    printCurrentTime ()
+    MachineLearning.TorchLinearRegressionSequential.torchSharpLR()
     //MachineLearning.MachineLearning.machineLearningList ()
     printCurrentTime ()
     //printfn "*************************************" 

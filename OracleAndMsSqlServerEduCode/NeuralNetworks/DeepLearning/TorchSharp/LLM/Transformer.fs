@@ -210,18 +210,20 @@ module Transformer_TorchSharp =
     // Training loop for pre-training or fine-tuning with perplexity evaluation
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer) (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
        
-       [ 0 .. maxEpochs - 1 ]
+        [ 0 .. maxEpochs - 1 ]
         |> List.iter
             (fun epoch
                 ->
-                optimizer.zero_grad()
+                optimizer.zero_grad()  //Resets the gradients of all parameters managed by the optimizer to zero.
                 
                 use output = model.forward input
                 use loss = lossFn.forward(output.view(-1L, vocabSize), target.view(-1L))
                 let perplexity = torch.exp(loss).item<float32>()
                 
+                //**************************************************
+                // Tady se v pozadi meni stav modelu
                 try
-                    loss.backward()
+                    loss.backward() //meni model
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore
                 with
                 | :? System.StackOverflowException as ex
@@ -232,7 +234,8 @@ module Transformer_TorchSharp =
                     -> 
                     printfn "%s" (string ex.Message) 
                
-                optimizer.step() |> ignore
+                optimizer.step() |> ignore  //meni model
+                //**************************************************
                 
                 let counter = (+) epoch 1
                 match counter % 100 = 0 && counter > 100 with

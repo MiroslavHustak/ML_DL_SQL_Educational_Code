@@ -101,7 +101,6 @@ module MachineLearning =
 
         //LBFGS Poisson Regression //Limited-memory Broyden-Fletcher-Goldfarb-Shanno algorithm
         let trainerOptions = 
-
             LbfgsPoissonRegressionTrainer.Options(
                 LabelColumnName = "Label",
                 FeatureColumnName = "Features",
@@ -118,14 +117,12 @@ module MachineLearning =
         let trainer = trainer_SGD ()        
         //let trainer = trainer_LBFGS ()  //nema to ocekavane vysledky
         
-        let pipeline =
-            EstimatorChain().Append(featureEngineering).Append(trainer)      
+        let pipeline = EstimatorChain().Append(featureEngineering).Append(trainer)      
         
         let model = pipeline.Fit dataView
     
         // Extract model parameters
-        let linearModel = 
-            model.LastTransformer.Model
+        let linearModel = model.LastTransformer.Model
     
         let weightsArray = linearModel.Weights |> Array.ofSeq
         let bias = linearModel.Bias
@@ -140,10 +137,12 @@ module MachineLearning =
             DenseMatrix.ofRowArrays (
                 data |> Array.map (fun p -> [| p.X1; p.X2 |])
             )
+        
         let y =
             DenseVector.ofArray (
                 data |> Array.map (fun p -> p.Label)
             )
+
         let weightsArray = linearModel.Weights |> Seq.map float32 |> Array.ofSeq
         let theta = DenseVector.ofArray weightsArray
         let predictions = X * theta + DenseVector.create samples bias
@@ -210,15 +209,18 @@ module MachineLearning =
             let m = float X.RowCount
         
             let rec loop currentTheta previousCost iteration =
+
                 match iteration >= maxIterations with
                 | true 
                     ->
                     actor.Post <| UpdateState 1
+
                     currentTheta
 
                 | false 
                     ->
                     actor.Post <| UpdateState 1
+
                     let predictions : Vector<float> = X * currentTheta
                     let errors = predictions - y
                     let gradient = (X.Transpose() * errors) / m
@@ -285,6 +287,7 @@ module MachineLearning =
                 )           
            
         let meanSquaredError (X : Matrix<float>) (y : Vector<float>) (theta : Vector<float>) =
+
             let predictions = X * theta // Forward pass: Compute predictions (X * theta)
             let errors = predictions - y // Compute errors for loss calculation
             (errors.PointwisePower 2).Sum() / (2.0 * float X.RowCount) // Mean squared error (MSE) loss
@@ -300,11 +303,13 @@ module MachineLearning =
                 | true 
                     ->
                     actor.Post <| UpdateState 1
+
                     currentTheta
     
                 | false
                     ->
                     actor.Post <| UpdateState 1
+                    
                     let predictions : Vector<float> = X * currentTheta // Forward pass: Compute predictions
                     // Remark: This forward pass is the first step of backpropagation, computing the model's output (X * theta) needed for the loss and gradient.
                     let errors = predictions - y // Compute errors (difference between predictions and true values)
