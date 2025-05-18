@@ -10,8 +10,9 @@ open type torch.nn.functional
 open type TorchSharp.TensorExtensionMethods
 
 //*******************************************************************
-(*    
+(* 
 This code is still under development and is intended for educational purposes only.
+And yes, I know that TorchSharp is overkill for linear regression.
 
 Option and Result types have not been applied yet.
 Separation of data and data manipulation not fully implemented yet.

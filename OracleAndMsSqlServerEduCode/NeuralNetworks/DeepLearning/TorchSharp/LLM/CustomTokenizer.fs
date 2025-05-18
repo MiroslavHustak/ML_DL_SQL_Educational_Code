@@ -85,7 +85,7 @@ module TikTokTokenizer =
 
     open TiktokenSharp
 
-    // NEBUDE FUNGOVAT, NEB MAM vocabSize = 8, coz je malo
+    // NEBUDE FUNGOVAT, nebot mam vocabSize = 8, coz je malo
 
     // Uses the cl100k_base encoding from Tiktoken, which has a large vocabulary (typically ~100,000 tokens).    
     // Uses tikToken.Encode to convert text into token IDs, which are typically in the range [0, ~100,000) based on the cl100k_base vocabulary.    
