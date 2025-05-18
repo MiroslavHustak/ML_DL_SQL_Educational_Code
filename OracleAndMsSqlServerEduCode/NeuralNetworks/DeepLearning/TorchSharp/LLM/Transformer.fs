@@ -1,6 +1,7 @@
 ﻿namespace NeuralNetworks
 
 open System
+
 open TorchSharp
 open TorchSharp.Modules
 
@@ -34,7 +35,7 @@ module Transformer_TorchSharp =
     
     //TODO!!! zrobit record a presunout do dat
     let [<Literal>] private dModel = 72L //embeddings of size 72
-    let [<Literal>] private epochs = 20000
+    let [<Literal>] private epochs = 14000
     let [<Literal>] private fineTuneEpochs = 2000 //max new tokens
     let private batch = 32L
     let [<Literal>] private fineTuneBatch = 10L
@@ -47,8 +48,11 @@ module Transformer_TorchSharp =
     //This function generates sinusoidal non-learnable positional encodings for token positions
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) : torch.Tensor =
 
-        let position = torch.arange(seqLen, dtype=torch.float32).unsqueeze(1)
-        let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype=torch.float32) * -(Math.Log(10000.0) / float dModel))
+        let position = torch.arange(seqLen, dtype = torch.float32).unsqueeze(1)
+        //.unsqueeze(1) adds a new dimension at index 1 a misto rozmeru [|5|] zrobi [|5,  1|], viz take educational code
+        
+        let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype = torch.float32) * (- Math.Log 10000.0 / float dModel))
+        //Each element of the matrix is independently transformed as e^x
         
         let encodings = torch.zeros([|seqLen; dModel|])
         encodings.index_copy_(1, torch.arange(0L, dModel, 2L), torch.sin(position * divTerm)) |> ignore
@@ -151,10 +155,10 @@ module Transformer_TorchSharp =
 
         //EMBEDDING AND ENCODING TOKEN POSITIONS
         //instantiate an embedding layer 
-        let embedding = Embedding(vocabSize, dModel)  //jen priprava, zatim jsou tam jen nahodna cisla
+        let embedding = Embedding (vocabSize, dModel)  //jen priprava, zatim jsou tam jen nahodna cisla
         // Remark: The Embedding layer converts token indices (from tokenization) into dense embedding vectors of size dModel (64).       
         
-        let positionEmbedding = Embedding(1024L, dModel)
+        let positionEmbedding = Embedding (1024L, dModel)
         let posEnc = getPositionalEncodings 1024L dModel   //jen priprava, zatim jsou tam jen nahodna cisla
         // Remark: Positional encodings are added to token embeddings to preserve sequence order, complementing tokenization.
 
@@ -273,7 +277,9 @@ module Transformer_TorchSharp =
                 let struct (probs, indices) = torch.topk(logits / temp, int effectiveTopK, dim=0)
                 let probs = softmax(probs, dim=0L)
                 // Remark: Multinomial sampling converts top-k probabilities into a single token index, introducing controlled randomness in token selection.
-                let idx = torch.multinomial(probs, 1).item<int64>()
+
+                //If probs = tensor([0.1, 0.7, 0.1, 0.1]), then idx will be 1 most of the time (because 0.7 probability), but it can also be 0, 2, or 3 occasionally.
+                let idx = torch.multinomial(probs, 1).item<int64>() //It randomly picks one category index from probs
                 indices.[idx].item<int64>()
             | "greedy" 
                 ->
@@ -316,7 +322,7 @@ module Transformer_TorchSharp =
                 let newInput: torch.Tensor = torch.cat([|inputSeq; torch.tensor([|nextToken|], device=inputSeq.device).unsqueeze(0L)|], dim=1L) // Append the new token to the input sequence for the next iteration; shape: [batch=1, seqLen+1]
                 generate model newInput (steps + 1) maxSteps newAcc contextSize temp topK strategy // Recursively call generate with the updated input, step count, and accumulator    
     
-    let internal main () =
+    let internal main () =     
 
         let device = match torch.cuda.is_available() with true -> torch.CUDA | false -> torch.CPU
         printfn "Using device: %A" <| (string device).ToUpper()
