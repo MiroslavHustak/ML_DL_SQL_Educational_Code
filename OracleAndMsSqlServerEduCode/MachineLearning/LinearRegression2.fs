@@ -36,7 +36,7 @@ module TorchLinearRegression =
             let x1 = torch.rand([| int64 numSamples; 1L |]) * 10.0f
             let x2 = torch.rand([| int64 numSamples; 1L |]) * 10.0f
             let y = 2.0f * x1 + 3.0f * x2 + noise
-            (torch.cat([|x1; x2|], 1), y)
+            (torch.concat([|x1; x2|], 1), y)
     
         // 1) Define the model: Single Linear Layer
         let model = torch.nn.Linear(2L, 1L)

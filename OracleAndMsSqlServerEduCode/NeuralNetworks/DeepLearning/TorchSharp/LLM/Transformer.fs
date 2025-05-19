@@ -326,7 +326,8 @@ module Transformer_TorchSharp =
                 generate model newInput (steps + 1) maxSteps newAcc contextSize temp topK strategy // Recursively call generate with the updated input, step count, and accumulator    
     
     let internal main () =     
-
+        
+        //CUDA® is a parallel computing platform and programming model developed by NVIDIA for general computing on graphical processing units (GPUs).
         let device = match torch.cuda.is_available() with true -> torch.CUDA | false -> torch.CPU
         printfn "Using device: %A" <| (string device).ToUpper()
 
