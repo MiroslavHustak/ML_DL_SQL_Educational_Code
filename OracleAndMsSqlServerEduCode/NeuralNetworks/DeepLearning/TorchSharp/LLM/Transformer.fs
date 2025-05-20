@@ -29,9 +29,9 @@ module Transformer_TorchSharp =
     //TODO!!! zrobit record a presunout do dat
     // Vocabulary and hyperparameters
     // Remark: Defines the vocabulary for tokenization, mapping words to indices (e.g., "The" = 0, "Sun" = 1, ..., "<eos>" = 7).
-    let private vocabulary = [|"The"; "Sun"; "is"; "yellow"; "black"; "sky"; "blue"; "<eos>"|]   //pouze pro indexizaci
-    let private mv = vocabulary |> Array.mapi (fun i _ -> i) //tady zbytecne, ale aby to formalne bylo jako u realnych modelu
-    let private vocabSize = vocabulary.Length
+    let private vocabulary = [ "The"; "Sun"; "is"; "yellow"; "black"; "sky"; "blue"; "<eos>" ]   //pouze pro indexizaci
+    let private mv = vocabulary |> List.mapi (fun i _ -> i) //tady zbytecne, ale aby to formalne bylo jako u realnych modelu
+    let private vocabSize = vocabulary |> List.length
     
     //TODO!!! zrobit record a presunout do dat
     let [<Literal>] private dModel = 72L //embeddings of size 72
@@ -39,7 +39,7 @@ module Transformer_TorchSharp =
     let [<Literal>] private fineTuneEpochs = 2000 //max new tokens
     let private batch = 32L
     let [<Literal>] private fineTuneBatch = 10L
-    let [<Literal>] private nHeads = 12L  //AttentionHeadCount v prednasce
+    let [<Literal>] private nHeads = 12L  //AttentionHeadCount v prednasce, taky jich ma 12
     let [<Literal>] private numLayers = 2
     let [<Literal>] private dropoutRate = 0.1f
     let [<Literal>] private topK = 3L
@@ -63,6 +63,8 @@ module Transformer_TorchSharp =
     // Transformer Decoder Layer with causal mask and multi-head self-attention
     // cca to odpovida pojmu Transformer Block v prednasce Tomáše Hercega
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
+
+        //MULTI-HEAD ATTENTION
 
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
         
@@ -110,14 +112,19 @@ module Transformer_TorchSharp =
             use k = qkvReshaped.select(2, 1L).transpose(1, 2) // K: [batch, nHeads, seq, headDim].
             use v = qkvReshaped.select(2, 2L).transpose(1, 2) // V: [batch, nHeads, seq, headDim].
     
-            // Step 3: Computing attention scores.
+            // Step 3: Computing attention scores. //torch.matmul contains scalar multiplications  
             use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim) // QK^T / sqrt(d_k): [batch, nHeads, seq, seq].
     
             // Step 4: Causal masking for auto-regressive tasks. // This prevents attending to future tokens during training.
             use mask = torch.triu(torch.ones([|seq; seq|], device=attentionScores.device), diagonal=1L).to_type(torch.ScalarType.Bool) // Creates upper triangular mask.
             use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity) // Applies mask to prevent attending to future tokens.
-            //vsimni si nahrazeni nul za minus nekonecno
-    
+            //slozitejsi nez v prednasce 
+            //torch.ones vytvori tensor vyplneny 1. 
+            //torch.triu extracts the upper triangular part of the matrix, starting above the main diagonal. Elements in the upper triangle remain 1, while elements on or below the diagonal are set to 0.
+            //.to(dtype=torch.bool) converts the matrix to a boolean type, where 1 becomes True (future token and should not be attended to) and 0 becomes False (can be attended to (current or past token)
+            //maskedScores zajisti nahradue True za minus nekonecno    
+            //nize uvedeny softmax z minus nekonecno zrobi nuly.
+   
             // Step 5: Applying softmax for normalization.
             // Step 6: Applying dropout to attention weights.
             use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward // Softmax over last dimension, then apply dropout: [batch, nHeads, seq, seq].
@@ -155,10 +162,10 @@ module Transformer_TorchSharp =
 
         //EMBEDDING AND ENCODING TOKEN POSITIONS
         //instantiate an embedding layer 
-        let embedding = Embedding (vocabSize, dModel)  //jen priprava, zatim jsou tam jen nahodna cisla
-        // Remark: The Embedding layer converts token indices (from tokenization) into dense embedding vectors of size dModel (64).       
+        let embedding = Embedding (vocabSize, dModel)  //jen priprava, zatim jsou tam jen nahodna cisla //v prednasce 50257 x 768, ja mam pouze 8 x 72 
+        // Remark: The Embedding layer converts token indices (from tokenization) into dense embedding vectors of size dModel (72).       
         
-        let positionEmbedding = Embedding (1024L, dModel)
+        let positionEmbedding = Embedding (1024L, dModel) /// v prednasce ContextSize (1024) x 768, ja mam pouze 1024 x 72
         let posEnc = getPositionalEncodings 1024L dModel   //jen priprava, zatim jsou tam jen nahodna cisla
         // Remark: Positional encodings are added to token embeddings to preserve sequence order, complementing tokenization.
 
@@ -186,7 +193,8 @@ module Transformer_TorchSharp =
             // Viz poznámka 2 (Notes.txt) - rozdíly oproti přednášce Tomáše Hercega
             //*********************************************************************************
 
-            //absolute positional embeddings    
+            //absolute positional embeddings
+            //mam to slozitejsi, nez v prednasce
             let embWithPos = emb + posEnc.narrow(0L, 0L, seqLen).``to``(x.device) // Add positional encodings //soucet tensoru
             // Remark: Adds positional encodings to token embeddings to incorporate sequence position information.
             
@@ -338,6 +346,7 @@ module Transformer_TorchSharp =
        
         // TODO presunout do dat
         // Data preparation: pre-training input and target sequences (320 examples)
+        // V obrovskem mnozstvi textu nachazime oboji - jak vstupni text, tak aji vysledny text (tj. vlastne nic noveho LLM nevytvori)
         let inputData = //A sequence of tokens up to a certain point (e.g., [0, 1, 2] for "The Sun is").    
             Array2D.init 320 3
                 (fun i k 
@@ -352,7 +361,7 @@ module Transformer_TorchSharp =
         // Remark: Data preparation: Creates input sequences as token indices (e.g., "The Sun is" = [0, 1, 2]) based on the vocabulary.
         // This implicitly assumes tokenization has occurred, mapping words to their indices in the vocabulary array.  
         
-        let targetData =  //The next token(s) in the sequence (e.g., [2, 3, 7] for "is yellow <eos>"). //tj. jakoby posunute o jeden token (nebot take hledame next token)
+        let targetData =  //The next token(s) in the sequence (e.g., [2, 3, 7] for "is yellow <eos>"). //jakoby vysledek (jak by mel vysledek vypadat), tj. jakoby posunute o jeden token (nebot take hledame next token)
             Array2D.init 320 3
                 (fun i k
                     ->
@@ -382,7 +391,7 @@ module Transformer_TorchSharp =
 
         printfn "Starting pre-training..."        
               
-        use model = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers)).``to``(device)
+        use model = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers)).``to``(device) //embedding and positional embeddings jsou az tady (na rozdil od prednasky)
 
         use lossFn = new CrossEntropyLoss() //viz přednáška Tomáše Hercega
         use optimizer = torch.optim.Adam(model.parameters(), lr=0.0001) //Adam is the optimizer that updates the model’s parameters (weights) to minimize the loss computed by CrossEntropyLoss
@@ -424,6 +433,6 @@ module Transformer_TorchSharp =
         printfn "\n"
         
         printf "Generated sequence (words): "
-        generated |> List.iter (fun id -> printf "%s " (vocabulary |> Array.item (int id)))
+        generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
         // Remark: Converts generated token indices back to words using the vocabulary, reversing the tokenization process for human-readable output.
         printfn "\n"

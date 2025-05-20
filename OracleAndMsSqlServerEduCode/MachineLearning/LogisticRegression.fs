@@ -52,10 +52,11 @@ module ManualLogisticRegression =
             // Predicts churn probability for a customer using trained weights
             let predictChurn weights customer = predict weights customer
     
-            // 6. LogLoss evaluates prediction error, used for training and evaluation
+            // 6. LogLoss (Cross-Entropy Loss) evaluates prediction error, used for training and evaluation (tady se uz nepouziva MSE)
             // Computes log loss (negative log-likelihood) for a customer, measuring the error in predicted probability
             // Log loss = -[y * log(p) + (1-y) * log(1-p)], where y is actual churn and p is predicted probability
             let logLoss (weights : float list) customer =
+
                 let y = customer.Churn
                 let p = predict weights customer
                 -(y * log p + (1.0 - y) * log (1.0 - p))
@@ -64,6 +65,7 @@ module ManualLogisticRegression =
             // Computes the gradient of the log loss with respect to weights
             // Gradient for each weight = (p - y) * xi, where p is predicted probability and y is actual churn
             let gradient (weights : float list) customer =
+
                 let y = customer.Churn
                 let p = predict weights customer
                 let error = p - y // Difference between predicted probability and actual label
@@ -72,15 +74,18 @@ module ManualLogisticRegression =
             // 8. UpdateWeights applies gradient descent, part of the optimization process
             // Updates weights using gradient descent: w_new = w_old - learningRate * gradient
             let updateWeights (weights : float list) (gradients : float list) learningRate =
+                
                 List.map2 (fun w g -> w - learningRate * g) weights gradients
     
             // 9. Train orchestrates the training process, using gradient descent to optimize weights
             // Trains the model by iteratively updating weights to minimize log loss
             let train (data : Customer list) learningRate iterations =
+                
                 let featureCount = 3 // Number of features: MonthlyBill, ContractLength, BiasFeature
                 let initialWeights = List.init featureCount (fun _ -> 0.0) // Initialize weights w = [w0, w1, w2] to 0
     
                 let rec trainIter weights iter =
+
                     match iter with
                     | 0 -> 
                         weights // Return final weights after all iterations
@@ -180,6 +185,7 @@ module ManualLogisticRegression =
     
         // Convert float-based data to ML.NET-compatible data
         let convertData (data : ManualLogisticRegression.Customer list) : Customer list =
+
             data
             |> List.map
                 (fun c 
@@ -210,6 +216,7 @@ module ManualLogisticRegression =
 
              // Attempt to extract weights (handling calibrated models) //tohle neber prilis vazne
             let tryGetWeights () =
+
                 try
                     let lastTransformer = model.LastTransformer
                     let calibratedModel = lastTransformer.Model
