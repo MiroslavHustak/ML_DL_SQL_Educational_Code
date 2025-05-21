@@ -2,7 +2,7 @@
 
 (*
 Rozdil oproti prednasce (pouze cast tykajici se normalizace)
-torch.nn.LayerNorm by melo pocitat to, co je manualne v C# kodu
+torch.nn.LayerNorm pocita v pozadi to, co je manualne v C# kodu v miste 1:24:28 - scale, shift, mean, variance
 Less flexible, as LayerNorm uses default settings (e.g., epsilon = 1E-5 by default in TorchSharp/PyTorch), but you can customize it via optional parameters if needed.            
 *) 
 

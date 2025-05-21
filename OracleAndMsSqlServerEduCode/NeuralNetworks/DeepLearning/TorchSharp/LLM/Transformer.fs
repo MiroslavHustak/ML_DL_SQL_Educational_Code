@@ -35,7 +35,7 @@ module Transformer_TorchSharp =
     
     //TODO!!! zrobit record a presunout do dat
     let [<Literal>] private dModel = 72L //embeddings of size 72
-    let [<Literal>] private epochs = 14000
+    let [<Literal>] private epochs = 20000
     let [<Literal>] private fineTuneEpochs = 2000 //max new tokens
     let private batch = 32L
     let [<Literal>] private fineTuneBatch = 10L
@@ -44,6 +44,7 @@ module Transformer_TorchSharp =
     let [<Literal>] private dropoutRate = 0.1f
     let [<Literal>] private topK = 3L
     let [<Literal>] private contextSize = 1024
+    let [<Literal>] private learningRate = 0.001    
 
     //This function generates sinusoidal non-learnable positional encodings for token positions
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) : torch.Tensor =
@@ -64,7 +65,7 @@ module Transformer_TorchSharp =
     // cca to odpovida pojmu Transformer Block v prednasce Tomáše Hercega
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
 
-        //MULTI-HEAD ATTENTION
+        //MULTI-HEAD ATTENTION AND POST-ATTENTION NORMALIZATION
 
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
         
@@ -87,6 +88,8 @@ module Transformer_TorchSharp =
     
         override _.forward x =
 
+            //MULTI-HEAD ATTENTION
+
             // Input `x` is [batch, seq, dModel], where seq is sequence length, dModel is embedding dimension.
             let (batch, seq, _) = x.shape |> Array.head, x.shape |> Array.item 1, x.shape |> Array.item 2
             
@@ -108,11 +111,14 @@ module Transformer_TorchSharp =
             use qkvReshaped = qkv.view reshapedShape // Reshapes to [batch, seq, 3, nHeads, headDim] for splitting Q, K, V.
     
             // Step 2 (continued): Extract Q, K, V for each head.
-            use q = qkvReshaped.select(2, 0L).transpose(1, 2) // Q: [batch, nHeads, seq, headDim].
-            use k = qkvReshaped.select(2, 1L).transpose(1, 2) // K: [batch, nHeads, seq, headDim].
+            //transpose je pro prohozeni heads, aby se dostaly "dopredu" - prohozeni dimenzi 1 a 2
+            use q = qkvReshaped.select(2, 0L).transpose(1, 2) // Q: [batch, nHeads, seq, headDim]. //pro kazdy token najde, co je "nejdulezitejsi"
+            use k = qkvReshaped.select(2, 1L).transpose(1, 2) // K: [batch, nHeads, seq, headDim]. //pro kazdy token najde svoji vlastni dulezitost
             use v = qkvReshaped.select(2, 2L).transpose(1, 2) // V: [batch, nHeads, seq, headDim].
     
             // Step 3: Computing attention scores. //torch.matmul contains scalar multiplications  
+            //tam,kde je skalarni soucin nejvyssi, tak ty tokeny mohou spolu souviset
+            //transpose abych srovnal rozmery matic a mohl je nasobit
             use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim) // QK^T / sqrt(d_k): [batch, nHeads, seq, seq].
     
             // Step 4: Causal masking for auto-regressive tasks. // This prevents attending to future tokens during training.
@@ -125,21 +131,22 @@ module Transformer_TorchSharp =
             //maskedScores zajisti nahradue True za minus nekonecno    
             //nize uvedeny softmax z minus nekonecno zrobi nuly.
    
-            // Step 5: Applying softmax for normalization.
-            // Step 6: Applying dropout to attention weights.
+            // Step 5: Applying softmax for normalization. - kdyz vyhodime cca pulku matice (ci tenzoru), musi se opet srovnat zbyvajici hodnoty (normalizace), z -nekonecno budou nuly, jinde tak, aby soucet prvku byl 1
+            // Step 6: Applying dropout to attention weights. - opet jeste neco vylifruju
             use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward // Softmax over last dimension, then apply dropout: [batch, nHeads, seq, seq].
     
             // Step 7: Calculating context vectors. //tj. co je ve vete dulezite
-            use contextVector = torch.matmul(attentionWeights, v) // Attention weights * V: [batch, nHeads, seq, headDim].
+            //tady konecne pouzijeme v - value vektor
+            use contextVector = torch.matmul(attentionWeights, v) // Attention weights * V: [batch, nHeads, seq, headDim]. 
     
-            // Step 8: Concatenate multi-head outputs and reshape. //tech 12 "sloupcu" je zase slouceno dohromady, 
+            // Step 8: Concatenate multi-head outputs and reshape. //tech 12 heads (jakoby 12 "myslenek") je zase slouceno dohromady 
             use contextVector = contextVector.transpose(1, 2).contiguous().view(batch, seq, dModel) // Transpose to [batch, seq, nHeads, headDim], then reshape to [batch, seq, dModel].
     
             // Step 9: Final linear transformation.
-            // NORMALIZACE A AKTIVACNI FUNKCE
+            // NORMALIZACE (aby nebyly problemy se stabilitou) A AKTIVACNI FUNKCE
             contextVector
             |> outputProjection.forward // Applies final linear layer: [batch, seq, dModel].
-            |> fun output -> x + output // Residual connection: adds input to output.
+            |> fun output -> x + output // Residual connection - to je ta shortcuts v prednasce,  adds input to attention output, urychli backpropagation
             |> layerNorm1.forward // Applies layer normalization after attention.
             |> fun output
                 ->
@@ -148,7 +155,7 @@ module Transformer_TorchSharp =
                 |> gelu // Applies GELU activation.
                 |> feedForward2.forward // Feed-forward network (second layer).
                 |> dropout.forward 
-                |> fun ffOutput -> output + ffOutput // Residual connection for feed-forward.
+                |> fun ffOutput -> output + ffOutput // Residual connection for FFN - to je ta shortcuts v prednasce, urychli backpropagation
                 |> layerNorm2.forward // Final layer normalization.  //Normalize after feed-forward
             
             //*********************************************************************************
@@ -231,7 +238,9 @@ module Transformer_TorchSharp =
                 //**************************************************
                 // Tady se v pozadi meni stav modelu
                 try
-                    loss.backward() //meni model
+                    //The lecturer’s mention of "shortcuts" likely refers to residual connections (also called skip connections). 
+                    //These connections speed up and stabilize backpropagation by allowing gradients to flow more directly through the network, addressing issues like vanishing or exploding gradients. 
+                    loss.backward() //meni model // //This triggers backpropagation, computing gradients through the entire model, including the residual connections.
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore
                 with
                 | :? System.StackOverflowException as ex
@@ -394,7 +403,7 @@ module Transformer_TorchSharp =
         use model = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers)).``to``(device) //embedding and positional embeddings jsou az tady (na rozdil od prednasky)
 
         use lossFn = new CrossEntropyLoss() //viz přednáška Tomáše Hercega
-        use optimizer = torch.optim.Adam(model.parameters(), lr=0.0001) //Adam is the optimizer that updates the model’s parameters (weights) to minimize the loss computed by CrossEntropyLoss
+        use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam is the optimizer that updates the model’s parameters (weights) to minimize the loss computed by CrossEntropyLoss
         //Adam (Adaptive Moment Estimation)       
 
         model.train()
@@ -413,7 +422,7 @@ module Transformer_TorchSharp =
         // Remark: Converts tokenized fine-tuning target data into a tensor.
 
         printfn "Starting fine-tuning..."
-        use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         model.train()
         
         trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
@@ -428,7 +437,8 @@ module Transformer_TorchSharp =
         // Remark: Data preparation: Creates an input sequence for inference ("The Sun is" = [0, 1, 2]) as token indices.
         
         printf "Generated sequence (token IDs): "
-        let generated = generate model inputSeq 0 2 [] contextSize 0.7f 3L "top-k" |> List.rev // Generate 2 tokens with temp=0.7, topK=3, top-k sampling
+        let generated = generate model inputSeq 0 2 [] contextSize 0.7f topK "top-k" |> List.rev // Generate 2 tokens with temp=0.7, topK=3, top-k sampling
+        //let generated = generate model inputSeq 0 2 [] contextSize 0.7f topK "greedy" |> List.rev 
         generated |> List.iter (printf "%d ")
         printfn "\n"
         

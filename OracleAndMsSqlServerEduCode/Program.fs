@@ -129,9 +129,12 @@ module Program =
 
     let private printCurrentTime () =
         let currentTime = DateTime.Now.ToString("HH:mm:ss:fff")
-        printfn "Current time: %s" currentTime
+        printfn "Current time: %s" currentTime    
     
-    //NeuralNetworks.Transformer_TorchSharp.main ()
+    printCurrentTime () 
+    NeuralNetworks.Transformer_TorchSharp.main ()
+    printCurrentTime ()
+    printfn "*************************************" 
     //NeuralNetworks.MLP_Churn_TorchSharp.run ()
     //printfn "*************************************" 
     //NeuralNetworks.MLP_Churn_Synapses.run ()
@@ -152,15 +155,15 @@ module Program =
     //solveLinearSystem ()
     printCurrentTime ()
     //MachineLearning.MachineLearning.machineLearningArray ()
-    printCurrentTime ()
-    printfn "*************************************" 
-    printCurrentTime ()
-    MachineLearning.TorchLinearRegression.torchSharpLR()
-    printfn "*************************************" 
-    printCurrentTime ()
-    MachineLearning.TorchLinearRegressionSequential.torchSharpLR()
+    //printCurrentTime ()
+    //printfn "*************************************" 
+    //printCurrentTime ()
+    //MachineLearning.TorchLinearRegression.torchSharpLR()
+    //printfn "*************************************" 
+    //printCurrentTime ()
+    //MachineLearning.TorchLinearRegressionSequential.torchSharpLR()
     //MachineLearning.MachineLearning.machineLearningList ()
-    printCurrentTime ()
+    //printCurrentTime ()
     //printfn "*************************************" 
     //printCurrentTime ()
     //MachineLearning.MachineLearning.machineLearningMLdotNET ()

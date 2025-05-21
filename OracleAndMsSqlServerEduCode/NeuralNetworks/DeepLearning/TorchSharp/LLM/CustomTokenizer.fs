@@ -22,7 +22,7 @@ module Tokenizer =
         |> List.map 
             (fun word 
                 -> 
-                match wordToIndex.TryFind word with
+                match wordToIndex |> Map.tryFind word with
                 | Some idx -> idx
                 | None     -> failwith <| sprintf "Unknown word: %s" word
             )
@@ -52,7 +52,7 @@ module Tokenizer =
                         (fun k 
                             ->
                             match k < seqLength - 1 with 
-                            | true  -> tokens.[k + 1] // Shifted token
+                            | true  -> tokens |> List.item (k + 1) // Shifted token
                             | false -> 0L // Pad last position with 0L
                         )
             )
@@ -76,7 +76,7 @@ module Tokenizer =
                 match idx with
                 | idx 
                     when idx >= 0L && idx < int64 vocabulary.Length 
-                        -> vocabulary.[int idx]
+                        -> vocabulary |> List.item (int idx)
                 | _ 
                         -> failwith <| sprintf "Invalid token index: %i" idx
             )
