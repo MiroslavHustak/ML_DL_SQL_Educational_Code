@@ -142,17 +142,16 @@ module Transformer_TorchSharp =
             // Step 8: Concatenate multi-head outputs and reshape. //tech 12 heads (jakoby 12 "myslenek") je zase slouceno dohromady 
             use contextVector = contextVector.transpose(1, 2).contiguous().view(batch, seq, dModel) // Transpose to [batch, seq, nHeads, headDim], then reshape to [batch, seq, dModel].
     
-            // Step 9: Final linear transformation.
-            // NORMALIZACE (aby nebyly problemy se stabilitou) A AKTIVACNI FUNKCE
+            // Step 9: Final linear transformation.          
             contextVector
             |> outputProjection.forward // Applies final linear layer: [batch, seq, dModel].
             |> fun output -> x + output // Residual connection - to je ta shortcuts v prednasce,  adds input to attention output, urychli backpropagation
-            |> layerNorm1.forward // Applies layer normalization after attention.
+            |> layerNorm1.forward // Applies layer normalization after attention. //NORMALIZACE (aby nebyly problemy se stabilitou)
             |> fun output
                 ->
                 output
                 |> feedForward1.forward // Feed-forward network (first layer).
-                |> gelu // Applies GELU activation.
+                |> gelu // Applies GELU activation. //AKTIVACNI FUNKCE
                 |> feedForward2.forward // Feed-forward network (second layer).
                 |> dropout.forward 
                 |> fun ffOutput -> output + ffOutput // Residual connection for FFN - to je ta shortcuts v prednasce, urychli backpropagation
