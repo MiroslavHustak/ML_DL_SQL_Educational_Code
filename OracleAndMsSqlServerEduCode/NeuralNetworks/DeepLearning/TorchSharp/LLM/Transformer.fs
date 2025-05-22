@@ -172,7 +172,6 @@ module Transformer_TorchSharp =
         let embedding = Embedding (vocabSize, dModel)  //jen priprava, zatim jsou tam jen nahodna cisla //v prednasce 50257 x 768, ja mam pouze 8 x 72 
         // Remark: The Embedding layer converts token indices (from tokenization) into dense embedding vectors of size dModel (72).       
         
-        let positionEmbedding = Embedding (1024L, dModel) /// v prednasce ContextSize (1024) x 768, ja mam pouze 1024 x 72
         let posEnc = getPositionalEncodings 1024L dModel   //jen priprava, zatim jsou tam jen nahodna cisla
         // Remark: Positional encodings are added to token embeddings to preserve sequence order, complementing tokenization.
 
@@ -348,6 +347,8 @@ module Transformer_TorchSharp =
         let device = match torch.cuda.is_available() with true -> torch.CUDA | false -> torch.CPU
         printfn "Using device: %A" <| (string device).ToUpper()
 
+        //input processing pipeline (tokenization, embeddings, positional encodings, normalization, and dropout)         
+
         // TOKENIZATION        
         // External tokenizers such as HuggingFace (Python interop is needed) shall be normally used for code used in production.
 
@@ -393,9 +394,9 @@ module Transformer_TorchSharp =
         let (inputData, targetData) = Tokenizer.createInputTargetPairs dataset 
         //let (inputData, targetData) = TikTokTokenizer.createInputTargetPairs dataset //TikTokTokenizer //nelze quli male delky     
         
-        use input = torch.tensor(inputData, device=device) // [32, 3]
+        use input = torch.tensor(inputData, device = device) // [320, 3]
         // Remark: Converts tokenized input data (indices) into a tensor for model processing.
-        use target = torch.tensor(targetData, device=device) // [32, 3]
+        use target = torch.tensor(targetData, device = device) // [320, 3]
         // Remark: Converts tokenized target data (indices) into a tensor for training.
 
         printfn "Starting pre-training..."        
@@ -416,9 +417,9 @@ module Transformer_TorchSharp =
         let fineTuneTargetData = Array2D.init 10 3 (fun i k -> [|2L; 3L; 7L|] |> Array.item k) // "is yellow <eos>" for all 10 examples
         // Remark: Data preparation: Creates fine-tuning target sequences as token indices ("is yellow <eos>" = [2, 3, 7]).
         
-        use fineTuneInput = torch.tensor(fineTuneInputData, device=device) // [10, 3]
+        use fineTuneInput = torch.tensor(fineTuneInputData, device = device) // [10, 3]
         // Remark: Converts tokenized fine-tuning input data into a tensor.
-        use fineTuneTarget = torch.tensor(fineTuneTargetData, device=device) // [10, 3]
+        use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device) // [10, 3]
         // Remark: Converts tokenized fine-tuning target data into a tensor.
 
         printfn "Starting fine-tuning..."
@@ -433,7 +434,7 @@ module Transformer_TorchSharp =
         model.eval()  // When model.eval() is called, the Dropout module’s forward method does not apply dropout (i.e., it effectively sets the dropout rate to zero for that pass).
         //This ensures that the Dropout modules in both the TransformerDecoderLayer (applied to attention weights) and the Transformer (applied to embeddings with positional encodings) do not drop any activations, making the model’s output deterministic during inference.
                     
-        use inputSeq = torch.tensor([|0L; 1L; 2L|], device=device).unsqueeze 0L // [1, 3]
+        use inputSeq = torch.tensor([|0L; 1L; 2L|], device = device).unsqueeze 0L // [1, 3]
         // Remark: Data preparation: Creates an input sequence for inference ("The Sun is" = [0, 1, 2]) as token indices.
         
         printf "Generated sequence (token IDs): "
