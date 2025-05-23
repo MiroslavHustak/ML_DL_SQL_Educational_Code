@@ -8,12 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\TorchSharpEducation.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\MLP\MultipleHiddenLayerMLP.fs" />
     <Content Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\Notes.txt" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\DataSetSimulation.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\CustomTokenizer.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\Transformer.fs" />
+    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\TransformerEducation.fs" />
+    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\TorchSharpEducation.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\Synapses\MultipleHiddenLayerMLP.fs" />
     <Compile Include="NeuralNetworks\ShallowLearning\MLNET\SingleLayerPerceptron.fs" />
     <Compile Include="NeuralNetworks\ShallowLearning\Synapses\SingleHiddenLayerMLP.fs" />
