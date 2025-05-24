@@ -3,8 +3,11 @@
 open System
 open TorchSharp
 open TorchSharp.Modules
+
 open type torch.nn
 open type torch.nn.functional
+
+open Settings
 
 module Transformer_TorchSharp =
 
@@ -23,24 +26,7 @@ module Transformer_TorchSharp =
     - Sebastian Raschka, "Build a Large Language Model (From Scratch)".
     *)
     //*******************************************************************
-
-    //TODO!!! zrobit record a presunout do dat
-    let private vocabulary = ["The"; "Sun"; "is"; "yellow"; "black"; "sky"; "blue"; "<eos>"]
-    let private vocabSize = vocabulary |> List.length
-    
-    //TODO!!! zrobit record a presunout do dat
-    let [<Literal>] private dModel = 72L // Embeddings of size 72
-    let [<Literal>] private epochs = 20000
-    let [<Literal>] private fineTuneEpochs = 2000 // Max new tokens
-    let private batch = 32L
-    let [<Literal>] private fineTuneBatch = 10L
-    let [<Literal>] private nHeads = 12L
-    let [<Literal>] private numLayers = 2
-    let [<Literal>] private dropoutRate = 0.1f
-    let [<Literal>] private topK = 3L
-    let [<Literal>] private contextSize = 1024
-    let [<Literal>] private learningRate = 0.001
-    
+        
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
@@ -87,7 +73,7 @@ module Transformer_TorchSharp =
             
             use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim)
             
-            use mask = torch.triu(torch.ones([|seq; seq|], device=attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
+            use mask = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
             use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
             
             use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward //softmax -> normalization (sum of attention weights to be 1)
@@ -113,7 +99,7 @@ module Transformer_TorchSharp =
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) : torch.Tensor =
 
         let position = torch.arange(seqLen, dtype=torch.float32).unsqueeze(1)
-        let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype=torch.float32) * (-Math.Log 10000.0 / float dModel))
+        let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype = torch.float32) * (-Math.Log 10000.0 / float dModel))
         
         let encodings = torch.zeros([|seqLen; dModel|])
         encodings.index_copy_(1, torch.arange(0L, dModel, 2L), torch.sin(position * divTerm)) |> ignore
@@ -130,10 +116,12 @@ module Transformer_TorchSharp =
         
         //hidden layers of the transformer neural network (performing the core transformations between the input embeddings and the output logits)
         let decoderLayers =
+
             let createLayer _ = new TransformerDecoderLayer(dModel, nHeads, dropoutRate) :> torch.nn.Module<torch.Tensor, torch.Tensor>
             let decoderLayersList = List.init numLayers createLayer
             let decoderLayersArray = List.toArray decoderLayersList
-            ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>(decoderLayersArray)
+            
+            ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor >> decoderLayersArray
         
         let outputLayer = Linear(dModel, vocabSize) // LOAD PRE-TRAINED GPT-2 OUTPUT LAYER WEIGHTS AND BIASES HERE (MAY BE TIED TO EMBEDDING WEIGHTS)
         let norm = LayerNorm [|dModel|] // LOAD PRE-TRAINED GPT-2 FINAL LAYER NORM SCALE AND SHIFT HERE
@@ -192,7 +180,7 @@ module Transformer_TorchSharp =
                     Output layer weight (W, [8, 72]) and bias (b, [8])             
                     *)
                     loss.backward() //Computes gradients of the loss with respect to model parameters (e.g., embedding weights, output layer’s W and b)                    
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore
                 with
                 | :? System.StackOverflowException as ex ->
                     printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch + 1) (string ex.Message)
@@ -213,11 +201,13 @@ module Transformer_TorchSharp =
     let rec [<TailCall>] private generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: string) =
         
         let trimInput (input: torch.Tensor) (contextSize: int) =
+
             match input.shape.[1] > contextSize with
             | true  -> input.narrow(1, -contextSize, contextSize) 
             | false -> input
         
         let sampleLogits (logits: torch.Tensor) (temp: float32) (topK: int64) (strategy: string) (vocabSize: int64) =
+
             let effectiveTopK = min topK vocabSize
             
             match effectiveTopK <= 0L with
@@ -227,13 +217,15 @@ module Transformer_TorchSharp =
             match strategy with
             | "top-k"
                 ->
-                let struct (probs, indices) = torch.topk(logits / temp, int effectiveTopK, dim=0)
+                let struct (probs, indices) = torch.topk(logits / temp, int effectiveTopK, dim = 0)
                 let probs = softmax(probs, dim = 0L)
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
+
             | "greedy" 
                 ->
                 torch.argmax(logits, dim=0).item<int64>()
+
             | _ 
                 ->
                 failwith $"Unsupported sampling strategy: {strategy}"
@@ -341,7 +333,8 @@ module Transformer_TorchSharp =
         printf "Generated sequence (token IDs): "
         
         // GENERATING THE OUTPUT SEQUENCE (EXPECTED TO BE [yellow, <eos>]) USING THE TRAINED MODEL
-        let generated = generate model inputSeq 0 2 [] contextSize 0.7f topK "top-k" |> List.rev
+
+        let generated = generate model inputSeq 0 2 [] contextSize 0.7f topK strategy |> List.rev
         
         generated |> List.iter (printf "%d ")
         printfn "\n"
