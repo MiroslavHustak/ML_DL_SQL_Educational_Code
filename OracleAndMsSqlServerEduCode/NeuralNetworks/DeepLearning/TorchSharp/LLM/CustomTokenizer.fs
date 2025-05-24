@@ -29,7 +29,7 @@ module Tokenizer =
         |> fun tokens -> List.append tokens [7L] // Append <eos> token (index 7)
 
     // Create input-target pairs for a list of text sequences (immutable)
-    let createInputTargetPairs (sequences: string list) : (int64[,] * int64[,]) =
+    let internal createInputTargetPairs (sequences: string list) : (int64[,] * int64[,]) =
 
         let numSequences = sequences |> List.length
         let seqLength = (tokenize (sequences |> List.head)) |> List.length // Assume all sequences have same length
@@ -67,7 +67,7 @@ module Tokenizer =
         (inputData, targetData)
 
     // Convert indices back to words for inference output
-    let detokenize (indices: int64 list) : string list =
+    let internal detokenize (indices: int64 list) : string list =
 
         indices 
         |> List.map 
@@ -92,7 +92,7 @@ module TikTokTokenizer =
     // Appends a custom <eos> token with ID 100000L, which is far outside the model’s vocabSize = 8.   
 
     // Tokenize a single text sequence into indices, appending <eos>
-    let tokenize (text: string) : int64 list =
+    let private tokenize (text: string) : int64 list =
 
         // Initialize the TikToken encoder with a specific encoding (e.g., for gpt-3.5-turbo)
         let tikToken = TikToken.GetEncoding "cl100k_base"
@@ -104,7 +104,7 @@ module TikTokTokenizer =
         List.append tokenIds [eosTokenId]      
 
     // Create input-target pairs for a list of text sequences (immutable)
-    let createInputTargetPairs (sequences: string list) : (int64[,] * int64[,]) =
+    let internal createInputTargetPairs (sequences: string list) : (int64[,] * int64[,]) =
            
         let numSequences = sequences |> List.length
         let seqLength = (tokenize (sequences |> List.head)) |> List.length // Assume all sequences have same length

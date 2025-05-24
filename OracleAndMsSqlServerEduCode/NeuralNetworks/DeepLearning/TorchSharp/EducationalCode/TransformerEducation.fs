@@ -61,11 +61,9 @@ module Transformer_TorchSharpEducation =
         encodings
         // Remark: Positional encodings are added to token embeddings to incorporate sequence order, complementing the tokenization process.
 
-    // Transformer Decoder Layer with causal mask and multi-head self-attention
-    // cca to odpovida pojmu Transformer Block v prednasce Tomáše Hercega
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
 
-        //MULTI-HEAD ATTENTION AND POST-ATTENTION NORMALIZATION
+        //MULTI-HEAD ATTENTION
 
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
         
@@ -80,15 +78,13 @@ module Transformer_TorchSharpEducation =
                 
         let layerNorm1 = LayerNorm [|dModel|]        // Normalization after attention (standard in transformers).
         let layerNorm2 = LayerNorm [|dModel|]        // Normalization after feed-forward network.
-        let dropout = Dropout (float dropoutRate)      // Step 6: Dropout for regularization, applied to attention weights.
+        let dropout = Dropout (float dropoutRate)    // Step 6: Dropout for regularization, applied to attention weights.
 
         //Quli registrace Linear, Dropout, LayerNorm v self.RegisterComponents() vyse uvedene parameterless fce nemuzeme dat do logickeho poradi, tj. do forward x
     
         do self.RegisterComponents()
     
         override _.forward x =
-
-            //MULTI-HEAD ATTENTION
 
             // Input `x` is [batch, seq, dModel], where seq is sequence length, dModel is embedding dimension.
             let (batch, seq, _) = x.shape |> Array.head, x.shape |> Array.item 1, x.shape |> Array.item 2
@@ -162,7 +158,6 @@ module Transformer_TorchSharpEducation =
             // Viz poznámka 1 (Notes.txt) - rozdíly oproti přednášce Tomáše Hercega
             //*********************************************************************************
 
-    //nazev Transformer zde neodpovida pojmu TRANSFORMER BLOCK ci TRANSFORMER z prednasky             
     type private Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("Transformer")
@@ -184,7 +179,16 @@ module Transformer_TorchSharpEducation =
             let decoderLayersArray = List.toArray decoderLayersList        
             ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>(decoderLayersArray)
         
-        let outputLayer = Linear (dModel, vocabSize)
+        let outputLayer = Linear (dModel, vocabSize) //Initialization of W
+        (*
+        Example initial W:        
+        w_0 ("The")    = [0.01, -0.02, 0.03, 0.01]
+        w_1 ("Sun")    = [-0.01, 0.02, -0.01, -0.03]
+        w_2 ("is")     = [0.02, -0.01, 0.01, 0.02]
+        w_3 ("yellow") = [-0.03, 0.01, -0.02, 0.01]
+        w_4 ("<eos>")  = [0.00, 0.02, -0.01, -0.02]   
+        *)
+        
         let norm = LayerNorm [|dModel|]
 
         do self.RegisterComponents() //registruje Embedding, DropoutLinear, LayerNorm, takze vyse uvedene parameterless fce nemuzeme dat do logickeho poradi, tj. do forward x
@@ -230,7 +234,7 @@ module Transformer_TorchSharpEducation =
             let decoderLayersOutput = Seq.fold (fun x (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward(x)) embWithPos decoderLayers
             //The decoderLayers in F# and transformersBlock in C# represent a stack of transformer layers, which collectively act as the hidden layers of the transformer model.
 
-            //layer normalization on the output of the transformer layers            
+            //layer normalization on the output of the transformer layers //uplne posledni embeddings  (not trained yet)         
             let normOut = norm.forward decoderLayersOutput           
             
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32) // [batch, seq, vocabSize]
@@ -244,8 +248,23 @@ module Transformer_TorchSharpEducation =
                 ->
                 optimizer.zero_grad()  //Resets the gradients of all parameters managed by the optimizer to zero.
                 
+                // Forward pass: Compute logits
+                // - Uses W and b from outputLayer, learned from previous epochs
                 use output = model.forward input
+                // Compute loss: Compare logits to target tokens
                 use loss = lossFn.forward(output.view(-1L, vocabSize), target.view(-1L))
+                
+                (*
+                Training Loop:
+                The loop (for epoch in 0 .. epochs - 1) updates (not calculates from scratch) the embedding weights and W using gradient descent. It starts with random floats and refines them to predict correct next tokens (e.g., “yellow” after “is”).
+
+                Loss Function:
+                The loss function (CrossEntropyLoss) compares the logits to target token IDs (e.g., ID 3 for “yellow”), not previous embeddings or weights. It penalizes incorrect predictions, guiding updates to W and embeddings.
+
+                Minimal Loss:
+                As the loss decreases over epochs, W and embeddings align so that logits = emb @ W^T + b gives the highest logit for the correct next token (e.g., logits[3] = 3.0 for “yellow”), selected via argmax.
+                *)
+
                 let perplexity = torch.exp(loss).item<float32>()
                 
                 //**************************************************
@@ -253,6 +272,7 @@ module Transformer_TorchSharpEducation =
                 try
                     //The lecturer’s mention of "shortcuts" likely refers to residual connections (also called skip connections). 
                     //These connections speed up and stabilize backpropagation by allowing gradients to flow more directly through the network, addressing issues like vanishing or exploding gradients. 
+                    // Backward pass: Compute gradients for W, b, and embedding weights
                     loss.backward() //meni model // //This triggers backpropagation, computing gradients through the entire model, including the residual connections.
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore
                 with
@@ -282,6 +302,7 @@ module Transformer_TorchSharpEducation =
     // Viz poznámka 3 (Notes.txt) - kód v C# odpovídající metodě GenerateText v přednášce Tomáše Hercega a mé funkci generate v F#
     //*********************************************************************************
 
+    //soucast inference
     let rec [<TailCall>] private generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: string) =
     // The generate function contains multinomial sampling, temperature, and stop token handling 
         
@@ -333,6 +354,8 @@ module Transformer_TorchSharpEducation =
             // Components:
             let _ = torch.no_grad() // Disable gradient computation to save memory and computation during inference
             
+            // Forward pass: Compute logits
+            // - Uses learned W and b to transform embedding to logits
             let adjustedLogit: torch.Tensor =
                 let trimmedInput = trimInput inputSeq contextSize  // Trim the input sequence to the model's context size to prevent exceeding the maximum sequence length
                 let logits: torch.Tensor = model.forward trimmedInput // Run the forward pass to get the model's predictions (logits) for the input sequence; shape: [batch=1, seqLen, vocabSize]
@@ -353,7 +376,23 @@ module Transformer_TorchSharpEducation =
                 newAcc // Stop if <eos> is generated
             | _ ->
                 let newInput: torch.Tensor = torch.cat([|inputSeq; torch.tensor([|nextToken|], device=inputSeq.device).unsqueeze(0L)|], dim=1L) // Append the new token to the input sequence for the next iteration; shape: [batch=1, seqLen+1]
-                generate model newInput (steps + 1) maxSteps newAcc contextSize temp topK strategy // Recursively call generate with the updated input, step count, and accumulator    
+                generate model newInput (steps + 1) maxSteps newAcc contextSize temp topK strategy // Recursively call generate with the updated input, step count, and accumulator   
+        
+        (*
+        // bare minimum
+        match steps with
+        | s when s >= maxSteps ->
+            acc // Stop after maxSteps
+        | _ ->
+            let _ = torch.no_grad() // Disable gradients for inference
+            let logits = model.forward inputSeq // Shape: [1, seqLen, vocabSize]
+            let lastLogit = logits.select(0, 0L).select(0, -1L) // Logits for last token: [8]
+            let nextToken = torch.argmax(lastLogit, dim=0).item<int64>() // Greedy: Pick highest logit
+            let newAcc = nextToken :: acc // Accumulate token
+            let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device=inputSeq.device).unsqueeze(0L)|], dim=1L) // Append new token
+            generate model newInput (steps + 1) maxSteps newAcc
+        *)   
+
     
     let internal main () =     
         
@@ -461,3 +500,100 @@ module Transformer_TorchSharpEducation =
         generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
         // Remark: Converts generated token indices back to words using the vocabulary, reversing the tokenization process for human-readable output.
         printfn "\n"
+
+
+    (*
+    //Simplified code for educational purposes
+        
+    // Simple Transformer model
+    type Transformer(vocabSize: int64, dModel: int64) as self =
+        inherit Module<torch.Tensor, torch.Tensor>("Transformer")
+        
+        // Embedding layer: Maps token IDs to dModel-dimensional vectors
+        // - Initialized with random floats when the Transformer is created
+        // - Weights (vocabSize x dModel, [5, 4]) are learned during training
+        let embedding = Embedding(vocabSize, dModel)
+        
+        // Output layer: Maps dModel-dimensional embeddings to vocabSize logits
+        // - W: Weight matrix, shape [vocabSize, dModel] = [5, 4], initialized with random floats
+        // - b: Bias vector, shape [vocabSize] = [5], initialized with zeros or small floats
+        // - W and b are learnable parameters, updated during training
+        let outputLayer = Linear(dModel, vocabSize)
+        
+        do self.RegisterComponents()
+        
+        override _.forward x =
+            // Convert token IDs to embeddings: [batch, seq] -> [batch, seq, dModel]
+            // - Uses embedding layer’s weights (randomly initialized, then learned)
+            let emb = embedding.forward x // Shape: [1, seq, 4]
+            // Directly pass to output layer (no transformer layers for simplicity)
+            // - Applies logits = emb @ W^T + b
+            // - W^T: [4, 5], emb: [1, seq, 4] -> output: [1, seq, 5]
+            outputLayer.forward emb // Shape: [1, seq, vocabSize]
+    
+    module Trainer =
+        // Minimal training loop with basic gradient descent
+        let train (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (input: torch.Tensor) (target: torch.Tensor) =
+            // Use simple gradient descent (no Adam, no optimizations)
+            let learningRate = 0.01
+            let lossFn = torch.nn.CrossEntropyLoss()
+            
+            for epoch in 0 .. epochs - 1 do
+                // Zero out gradients
+                model.zero_grad()
+                // Forward pass: Compute logits
+                // - Uses W and b from outputLayer, learned from previous epochs
+                use output = model.forward input // Shape: [1, seq, vocabSize]
+                // Compute loss: Compare logits to target tokens
+                use loss = lossFn.forward(output.view(-1L, int64 vocabSize), target.view(-1L))
+                // Backward pass: Compute gradients for W, b, and embedding weights
+                loss.backward()
+                // Update weights with gradient descent
+                // - W and b are updated: W -= learningRate * gradient(W)
+                for param in model.parameters() do
+                    if param.grad().IsSome then
+                        param.data().sub_(param.grad().Value.mul(scalar learningRate)) |> ignore
+                // Print loss every 20 epochs
+                if epoch % 20 = 0 then
+                    printfn "Epoch %d, Loss: %.4f" epoch (loss.item<float32>())
+    
+    // Inference: Predict next token
+    let generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) =
+        let _ = torch.no_grad() // Disable gradients for inference
+        // Forward pass: Compute logits
+        // - Uses learned W and b to transform embedding to logits
+        let logits = model.forward inputSeq // Shape: [1, seq, 5]
+        // Select logits for last token
+        let lastLogit = logits.select(0, 0L).select(0, -1L) // Shape: [5]
+        // Greedy sampling: Pick token with highest logit
+        torch.argmax(lastLogit, dim=0).item<int64>()
+    
+    let main () =
+        let device = torch.CPU // Use CPU for simplicity
+        printfn "Using device: %A" device
+        
+        // Prepare data
+        let (inputData, targetData) = Tokenizer.createInputTargetPairs dataset
+        use input = torch.tensor(inputData, device=device) // Shape: [1, 4]
+        use target = torch.tensor(targetData, device=device) // Shape: [1, 4]
+        
+        // Create model
+        // - Initializes W ([5, 4]) and b ([5]) with random floats
+        use model = new Transformer(int64 vocabSize, dModel).``to``(device)
+        
+        // Train model
+        // - Updates W, b, and embedding weights to learn "The Sun is yellow"
+        printfn "Training..."
+        model.train()
+        Trainer.train model input target
+        
+        // Inference: Predict next token after "The Sun is"
+        printfn "Generating..."
+        model.eval()
+        use inputSeq = torch.tensor([|0L; 1L; 2L|], device=device).unsqueeze(0) // [1, 3] for "The Sun is"
+        let nextToken = generate model inputSeq
+        printfn "Predicted token ID: %d (%s)" nextToken vocabulary.[int nextToken]
+    
+    main()
+    
+    *)
