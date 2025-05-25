@@ -14,7 +14,7 @@ module Settings =
     let internal batch = 32L
 
     let [<Literal>] internal dModel = 72L // Embeddings of size 72
-    let [<Literal>] internal epochs = 2000
+    let [<Literal>] internal epochs = 4000
     let [<Literal>] internal fineTuneEpochs = 2000 // Max new tokens   
     let [<Literal>] internal fineTuneBatch = 10L
     let [<Literal>] internal nHeads = 12L

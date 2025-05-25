@@ -55,6 +55,7 @@ module Transformer_TorchSharp =
             These representations are passed to subsequent layers or, after final normalization, used to compute logits = emb @ W^T + b for token prediction (e.g., “yellow”).
             *)
 
+            //TODO: validate 3D array (x.shape)
             let (batch, seq, _) = x.shape |> Array.head, x.shape |> Array.item 1, x.shape |> Array.item 2
             
             match dModel % nHeads <> 0L with
@@ -76,9 +77,11 @@ module Transformer_TorchSharp =
             use mask = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
             use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity) //Hiding future words with negative infinity
             
-            use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward //softmax -> normalization (sum of attention weights to be 1) //negative infinity -> 0
+            use attentionWeights = //softmax -> normalization (sum of attention weights to be 1) //negative infinity -> 0
+                softmax(maskedScores, -1L)
+                |> dropout.forward //zeroing out additional attention weights to reduce overfitting
             
-            use contextVector = torch.matmul(attentionWeights, v)
+            let contextVector = torch.matmul(attentionWeights, v) //use could lead to premature disposal 
             use contextVector = contextVector.transpose(1, 2).contiguous().view(batch, seq, dModel)
             
             contextVector
@@ -343,3 +346,5 @@ module Transformer_TorchSharp =
         printf "Generated sequence (words): "
         generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
         printfn "\n"
+
+        System.GC.Collect()
