@@ -74,9 +74,9 @@ module Transformer_TorchSharp =
             use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim)
             
             use mask = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
-            use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
+            use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity) //Hiding future words with negative infinity
             
-            use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward //softmax -> normalization (sum of attention weights to be 1)
+            use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward //softmax -> normalization (sum of attention weights to be 1) //negative infinity -> 0
             
             use contextVector = torch.matmul(attentionWeights, v)
             use contextVector = contextVector.transpose(1, 2).contiguous().view(batch, seq, dModel)
@@ -190,11 +190,12 @@ module Transformer_TorchSharp =
                 optimizer.step() |> ignore
                 
                 let counter = (+) epoch 1
-                match counter % 100 = 0 && counter > 100 with
-                | true  -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
-                | false -> ()
-                
-                System.GC.Collect()
+                match counter % 200 = 0 || counter = maxEpochs - 1 with
+                | true  -> 
+                        printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
+                        System.GC.Collect()
+                | false ->
+                        ()
             )
     
     // Generates tokens as part of the inference process
@@ -258,7 +259,7 @@ module Transformer_TorchSharp =
                 ->
                 let newInput: torch.Tensor = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
                 generate model newInput (steps + 1) maxSteps newAcc contextSize temp topK strategy
-    
+                
     let internal main () =
         
         // CUDA® is a parallel computing platform and programming model developed by NVIDIA for general computing on graphical processing units (GPUs).
@@ -338,7 +339,7 @@ module Transformer_TorchSharp =
         
         generated |> List.iter (printf "%d ")
         printfn "\n"
-        
+
         printf "Generated sequence (words): "
         generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
         printfn "\n"
