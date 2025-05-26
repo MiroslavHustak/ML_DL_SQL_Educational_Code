@@ -358,16 +358,11 @@ module Transformer_TorchSharp =
         generated |> List.iter (printf "%d ")
         printfn "\n"
 
-        //printf "Generated sequence (words): "
+        printf "Generated sequence (words): "
 
         let results = generated |> List.map (fun id -> vocabulary |> List.item (int id))
 
-        //generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
-        //printfn "\n"
+        generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
+        printfn "\n"
 
-        //System.GC.Collect()
-        model.Dispose()
-        optimizer.Dispose()
-        lossFn.Dispose()
-
-        results
+        System.GC.Collect()

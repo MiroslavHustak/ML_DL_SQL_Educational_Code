@@ -12,7 +12,7 @@ module TextData =
     let internal getSequences () : string list =
 
         (
-        List.init 666 (fun _ -> "The Sun is yellow")
+        List.init 6666 (fun _ -> "The Sun is yellow")
         @ 
         List.init 60 (fun _ -> "The Sun is black")
         )

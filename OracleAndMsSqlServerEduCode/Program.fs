@@ -133,21 +133,7 @@ module Program =
     
     printCurrentTime () 
 
-    [1 .. 1]  //nejak to nefunguje....
-    |> List.collect
-        (fun _ 
-            -> 
-            try
-                let result = lazy NeuralNetworks.Transformer_TorchSharp.main()
-           
-                System.GC.Collect()
-                System.GC.WaitForPendingFinalizers()  
-
-                result.Force()
-            with
-            |_ -> []
-        )
-    |> printfn ("%A")
+    NeuralNetworks.Transformer_TorchSharp.main()
 
     printCurrentTime ()
     printfn "*************************************" 
