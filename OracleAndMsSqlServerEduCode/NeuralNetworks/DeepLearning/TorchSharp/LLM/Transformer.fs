@@ -53,50 +53,63 @@ module Transformer_TorchSharp =
             Feed-forward processing: Applying position-wise non-linear transformations.            
             Residual connections and layer normalization stabilize the output.            
             These representations are passed to subsequent layers or, after final normalization, used to compute logits = emb @ W^T + b for token prediction (e.g., “yellow”).
-            *)
+            *) 
 
-            //TODO: validate 3D array (x.shape)
-            let (batch, seq, _) = x.shape |> Array.head, x.shape |> Array.item 1, x.shape |> Array.item 2
+            match x.shape with
+            | [|batch; seq; dmodel|]
+                when dmodel = dModel
+                    ->
+                    let (batch, seq, _) = x.shape |> Array.head, x.shape |> Array.item 1, x.shape |> Array.item 2
+
+                    match dModel % nHeads <> 0L with
+                    | true  -> failwithf "dModel (%d) must be divisible by nHeads (%d) to compute headDim." dModel nHeads
+                    | false -> ()
+                
+                    // MULI-HEAD ATTENTION
+                    let headDim = dModel / nHeads
+                    let reshapedShape = [|batch; seq; 3L; nHeads; headDim|]
+                
+                    use qkv = qkvProjection.forward x
+                    use qkvReshaped = qkv.view reshapedShape //The qkv.view method performs the actual splitting into the heads
+                
+                    use q = qkvReshaped.select(2, 0L).transpose(1, 2)
+                    use k = qkvReshaped.select(2, 1L).transpose(1, 2)
+                    use v = qkvReshaped.select(2, 2L).transpose(1, 2)
+                    // Each of these (q, k, v) ends up with shape: [batch; nHeads; seq; headDim]                    
+                
+                    // batched matrix multiplication matmul
+                    use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim)
+                
+                    use mask = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
+                    use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity) //Hiding future words with negative infinity
+                
+                    use attentionWeights = //softmax -> normalization (sum of attention weights to be 1) //negative infinity -> 0
+                        softmax(maskedScores, -1L)
+                        |> dropout.forward //zeroing out additional attention weights to reduce overfitting
+                
+                    // batched matrix multiplications matmul
+                    let contextVector = torch.matmul(attentionWeights, v) //use could lead to premature disposal 
+
+                    //Back to single representation //Concatenating the heads (from [batch; nHeads; seq; headDim]) back into [batch; seq; dModel]
+                    use contextVector = contextVector.transpose(1, 2).contiguous().view(batch, seq, dModel)
+                
+                    contextVector
+                    |> outputProjection.forward
+                    |> fun output -> x + output
+                    |> layerNorm1.forward
+                    |> fun output
+                        ->
+                        output
+                        |> feedForward1.forward
+                        |> gelu
+                        |> feedForward2.forward
+                        |> dropout.forward
+                        |> fun ffOutput -> output + ffOutput
+                        |> layerNorm2.forward
             
-            match dModel % nHeads <> 0L with
-            | true  -> failwithf "dModel (%d) must be divisible by nHeads (%d) to compute headDim." dModel nHeads
-            | false -> ()
-            
-            let headDim = dModel / nHeads
-            let reshapedShape = [|batch; seq; 3L; nHeads; headDim|]
-            
-            use qkv = qkvProjection.forward x
-            use qkvReshaped = qkv.view reshapedShape
-            
-            use q = qkvReshaped.select(2, 0L).transpose(1, 2)
-            use k = qkvReshaped.select(2, 1L).transpose(1, 2)
-            use v = qkvReshaped.select(2, 2L).transpose(1, 2)
-            
-            use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim)
-            
-            use mask = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
-            use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity) //Hiding future words with negative infinity
-            
-            use attentionWeights = //softmax -> normalization (sum of attention weights to be 1) //negative infinity -> 0
-                softmax(maskedScores, -1L)
-                |> dropout.forward //zeroing out additional attention weights to reduce overfitting
-            
-            let contextVector = torch.matmul(attentionWeights, v) //use could lead to premature disposal 
-            use contextVector = contextVector.transpose(1, 2).contiguous().view(batch, seq, dModel)
-            
-            contextVector
-            |> outputProjection.forward
-            |> fun output -> x + output
-            |> layerNorm1.forward
-            |> fun output
-                ->
-                output
-                |> feedForward1.forward
-                |> gelu
-                |> feedForward2.forward
-                |> dropout.forward
-                |> fun ffOutput -> output + ffOutput
-                |> layerNorm2.forward
+            | shapeArr 
+                    ->
+                    failwithf "Input tensor must have shape [batch; seq; dModel] but got %A" shapeArr            
     
     // Sinusoidal non-learnable positional encodings
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) : torch.Tensor =
@@ -185,20 +198,22 @@ module Transformer_TorchSharp =
                     loss.backward() //Computes gradients of the loss with respect to model parameters (e.g., embedding weights, output layer’s W and b)                    
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore
                 with
-                | :? System.StackOverflowException as ex ->
-                    printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch + 1) (string ex.Message)
-                    Console.ReadLine() |> ignore
-                | ex -> printfn "%s" (string ex.Message)
+                | :? System.StackOverflowException 
+                    as ex
+                        ->
+                        printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch + 1) (string ex.Message)
+                        Console.ReadLine() |> ignore
+                | ex 
+                        -> printfn "%s" (string ex.Message)
                 
                 optimizer.step() |> ignore
                 
                 let counter = (+) epoch 1
-                match counter % 200 = 0 || counter = maxEpochs - 1 with
-                | true  -> 
-                        printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
-                        System.GC.Collect()
-                | false ->
-                        ()
+                match counter % 200 = 0 with
+                | true  -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity                       
+                | false -> ()
+                
+                System.GC.Collect()
             )
     
     // Generates tokens as part of the inference process
@@ -343,8 +358,16 @@ module Transformer_TorchSharp =
         generated |> List.iter (printf "%d ")
         printfn "\n"
 
-        printf "Generated sequence (words): "
-        generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
-        printfn "\n"
+        //printf "Generated sequence (words): "
 
-        System.GC.Collect()
+        let results = generated |> List.map (fun id -> vocabulary |> List.item (int id))
+
+        //generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
+        //printfn "\n"
+
+        //System.GC.Collect()
+        model.Dispose()
+        optimizer.Dispose()
+        lossFn.Dispose()
+
+        results

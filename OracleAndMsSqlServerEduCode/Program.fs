@@ -132,7 +132,23 @@ module Program =
         printfn "Current time: %s" currentTime    
     
     printCurrentTime () 
-    NeuralNetworks.Transformer_TorchSharp.main ()
+
+    [1 .. 1]  //nejak to nefunguje....
+    |> List.collect
+        (fun _ 
+            -> 
+            try
+                let result = lazy NeuralNetworks.Transformer_TorchSharp.main()
+           
+                System.GC.Collect()
+                System.GC.WaitForPendingFinalizers()  
+
+                result.Force()
+            with
+            |_ -> []
+        )
+    |> printfn ("%A")
+
     printCurrentTime ()
     printfn "*************************************" 
     //NeuralNetworks.MLP_Churn_TorchSharp.run ()
@@ -168,4 +184,6 @@ module Program =
     //printCurrentTime ()
     //MachineLearning.MachineLearning.machineLearningMLdotNET ()
     //printCurrentTime ()
+
+    Console.ReadLine () |> ignore<string>
     
