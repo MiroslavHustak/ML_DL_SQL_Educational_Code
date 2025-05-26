@@ -204,7 +204,8 @@ module Transformer_TorchSharp =
                         printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch + 1) (string ex.Message)
                         Console.ReadLine() |> ignore
                 | ex 
-                        -> printfn "%s" (string ex.Message)
+                        ->
+                        printfn "%s" (string ex.Message)
                 
                 optimizer.step() |> ignore
                 
@@ -243,7 +244,7 @@ module Transformer_TorchSharp =
 
             | "greedy" 
                 ->
-                torch.argmax(logits, dim=0).item<int64>()
+                torch.argmax(logits, dim = 0).item<int64>()
 
             | _ 
                 ->

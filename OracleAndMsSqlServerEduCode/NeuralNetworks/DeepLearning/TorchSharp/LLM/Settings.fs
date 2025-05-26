@@ -23,4 +23,4 @@ module Settings =
     let [<Literal>] internal topK = 3L
     let [<Literal>] internal contextSize = 1024
     let [<Literal>] internal learningRate = 0.001
-    let [<Literal>] internal strategy = "greedy"  // "top-k" //
+    let [<Literal>] internal strategy = "top-k" //"greedy" 
