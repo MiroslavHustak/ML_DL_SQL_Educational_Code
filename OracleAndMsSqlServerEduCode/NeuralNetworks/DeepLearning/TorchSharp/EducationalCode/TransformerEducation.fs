@@ -153,6 +153,27 @@ module Transformer_TorchSharpEducation =
                 |> dropout.forward 
                 |> fun ffOutput -> output + ffOutput // Residual connection for FFN - to je ta shortcuts v prednasce, urychli backpropagation
                 |> layerNorm2.forward // Final layer normalization.  //Normalize after feed-forward
+
+            (*
+            Transformer decoder layers (or blocks) consist of a multi-head attention mechanism followed by a feed-forward neural network (FFN), 
+            with residual connections and layer normalization, as seen in your TransformerDecoderLayer class. 
+            These are often called "hidden layers" in the context of neural networks because they process intermediate representations between the input and output.   
+            
+            feedForward1 and feedForward2 represent the two linear layers that make up the position-wise feed-forward neural network (FFN) within each transformer decoder layer.
+            
+            The model has numLayers = 2, meaning it has two transformer decoder layers, each containing:
+            A multi-head attention mechanism (with qkvProjection and outputProjection).
+            
+            A feed-forward neural network (FFN) with feedForward1 and feedForward2.
+            
+            Key Point: Each decoder layer has its own pair of feedForward1 and feedForward2 instances. So, with numLayers = 2, you actually have:
+            Two feedForward1 layers (one per decoder layer, each with weights [288, 72] and bias [288]).
+            
+            Two feedForward2 layers (one per decoder layer, each with weights [72, 288] and bias [72]).
+            
+            The number of FFN layers (two per decoder layer) is fixed by the transformer architecture, not by the number of decoder layers. 
+            Even if you had 1, 12, or 96 decoder layers (like GPT-2 or GPT-3), each would still have exactly one FFN with two linear layers.
+            *)  
             
             //*********************************************************************************
             // Viz poznámka 1 (Notes.txt) - rozdíly oproti přednášce Tomáše Hercega

@@ -133,6 +133,13 @@ module Program =
     
     printCurrentTime () 
 
+    NeuralNetworks.Transformer_TorchSharp2.main()
+
+    printCurrentTime ()
+    printfn "*************************************" 
+
+    printCurrentTime () 
+
     NeuralNetworks.Transformer_TorchSharp.main()
 
     printCurrentTime ()
@@ -155,7 +162,7 @@ module Program =
     //printCurrentTime ()
     //MachineLearning.MLNETLogisticRegression.trainAndPredictML_NET ()
     //solveLinearSystem ()
-    printCurrentTime ()
+    //printCurrentTime ()
     //MachineLearning.MachineLearning.machineLearningArray ()
     //printCurrentTime ()
     //printfn "*************************************" 

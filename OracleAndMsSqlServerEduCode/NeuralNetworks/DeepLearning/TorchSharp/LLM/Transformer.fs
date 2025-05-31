@@ -1,6 +1,7 @@
 ﻿namespace NeuralNetworks
 
 open System
+
 open TorchSharp
 open TorchSharp.Modules
 
@@ -59,7 +60,9 @@ module Transformer_TorchSharp =
             | [|batch; seq; dmodel|]
                 when dmodel = dModel
                     ->
-                    let (batch, seq, _) = x.shape |> Array.head, x.shape |> Array.item 1, x.shape |> Array.item 2
+                    let (batch, seq, _) = x.shape |> Array.head, x.shape |> Array.item 1, x.shape |> Array.last
+
+                    //printfn "batch %i" batch
 
                     match dModel % nHeads <> 0L with
                     | true  -> failwithf "dModel (%d) must be divisible by nHeads (%d) to compute headDim." dModel nHeads
@@ -92,7 +95,8 @@ module Transformer_TorchSharp =
 
                     //Back to single representation //Concatenating the heads (from [batch; nHeads; seq; headDim]) back into [batch; seq; dModel]
                     use contextVector = contextVector.transpose(1, 2).contiguous().view(batch, seq, dModel)
-                
+                    //The concatenated output of the multi-head attention mechanism, where each head’s output (shape [batch; seq; headDim]) has been reshaped back to dModel
+                                    
                     contextVector
                     |> outputProjection.forward
                     |> fun output -> x + output
@@ -127,7 +131,7 @@ module Transformer_TorchSharp =
         inherit Module<torch.Tensor, torch.Tensor>("Transformer")
         
         let embedding = Embedding(vocabSize, dModel)  // LOAD PRE-TRAINED GPT-2 EMBEDDING WEIGHTS HERE
-        let posEnc = getPositionalEncodings 1024L dModel
+        let posEnc = getPositionalEncodings 128L dModel
         let dropout = Dropout(float dropoutRate)
         
         //hidden layers of the transformer neural network (performing the core transformations between the input embeddings and the output logits)
@@ -142,7 +146,7 @@ module Transformer_TorchSharp =
         let outputLayer = Linear(dModel, vocabSize) // LOAD PRE-TRAINED GPT-2 OUTPUT LAYER WEIGHTS AND BIASES HERE (MAY BE TIED TO EMBEDDING WEIGHTS)
         let norm = LayerNorm [|dModel|] // LOAD PRE-TRAINED GPT-2 FINAL LAYER NORM SCALE AND SHIFT HERE
 
-        //do outputLayer.weight <- embedding.weight //in case of using pre-trained weights //GPT-2 typically ties embedding and output weights        
+        do outputLayer.weight <- embedding.weight //in case of using pre-trained weights //GPT-2 typically ties embedding and output weights     
         
         do self.RegisterComponents()
         
@@ -175,7 +179,7 @@ module Transformer_TorchSharp =
        [0 .. maxEpochs - 1]
         |> List.iter
             (fun epoch
-                ->
+                ->               
                 optimizer.zero_grad()
                 
                 // COMPUTING LOGITS (emb @ W^T + b), THEN UPDATES EMBEDDING VECTORS, OUTPUT LAYER WEIGHTS, AND BIASES BASED ON LOSS
@@ -196,7 +200,7 @@ module Transformer_TorchSharp =
                     Output layer weight (W, [8, 72]) and bias (b, [8])             
                     *)
                     loss.backward() //Computes gradients of the loss with respect to model parameters (e.g., embedding weights, output layer’s W and b)                    
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float>
                 with
                 | :? System.StackOverflowException 
                     as ex
@@ -210,76 +214,61 @@ module Transformer_TorchSharp =
                 optimizer.step() |> ignore
                 
                 let counter = (+) epoch 1
-                match counter % 200 = 0 with
+                match counter % 20 = 0 with
                 | true  -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity                       
                 | false -> ()
-                
-                System.GC.Collect()
             )
     
     // Generates tokens as part of the inference process
     let rec [<TailCall>] private generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: string) =
         
-        let trimInput (input: torch.Tensor) (contextSize: int) =
+        let trimInput (input: torch.Tensor) =
 
             match input.shape.[1] > contextSize with
-            | true  -> input.narrow(1, -contextSize, contextSize) 
+            | true -> input.narrow(1, -contextSize, contextSize)
             | false -> input
-        
-        let sampleLogits (logits: torch.Tensor) (temp: float32) (topK: int64) (strategy: string) (vocabSize: int64) =
 
-            let effectiveTopK = min topK vocabSize
-            
-            match effectiveTopK <= 0L with
-            | true  -> failwith "topK must be positive and not exceed vocabulary size"
-            | false -> ()
-            
+        let sampleLogits (logits: torch.Tensor) =
+
             match strategy with
             | "top-k"
                 ->
-                let struct (probs, indices) = torch.topk(logits / temp, int effectiveTopK, dim = 0)
+                let struct (probs, indices) = torch.topk(logits / temp, int (min topK (int64 Settings.vocabSize)), dim = 0)
                 let probs = softmax(probs, dim = 0L)
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
 
             | "greedy" 
-                ->
-                torch.argmax(logits, dim = 0).item<int64>()
+                -> torch.argmax(logits, dim = 0).item<int64>()
 
             | _ 
-                ->
-                failwith $"Unsupported sampling strategy: {strategy}"
-        
-        match steps with
-        | s when s >= maxSteps 
-            ->
-            acc
-        | _ ->
-            let _ = torch.no_grad()
-      
-            // PREDICTING THE NEXT TOKEN BY COMPUTING LOGITS AND APPLYING SAMPLING (TOP-K, TEMPERATURE) 
-            let adjustedLogit: torch.Tensor =
-                let trimmedInput = trimInput inputSeq contextSize
-                let logits: torch.Tensor = model.forward trimmedInput
-                let lastLogit: torch.Tensor = logits.select(0, 0L).select(0, -1L)
+                -> failwithf "Unsupported sampling strategy: %s" strategy
+
+        match steps >= maxSteps with
+        | true  ->
+                List.rev acc
+        | false ->
+                use _ = torch.no_grad()
                 
-                match steps with
-                | 0 -> lastLogit.index_fill_(0, torch.tensor([|7L|], device = lastLogit.device), System.Single.NegativeInfinity)
-                | _ -> lastLogit
-            
-            let nextToken: int64 = sampleLogits adjustedLogit temp topK strategy (int64 vocabSize)
-            let newAcc: int64 list = nextToken :: acc
-            
-            match nextToken with
-            | 7L 
-                ->
-                newAcc
-            | _ 
-                ->
-                let newInput: torch.Tensor = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
-                generate model newInput (steps + 1) maxSteps newAcc contextSize temp topK strategy
+                // PREDICTING THE NEXT TOKEN BY COMPUTING LOGITS AND APPLYING SAMPLING (TOP-K, TEMPERATURE) 
+                use trimmedInput = trimInput inputSeq
+                use logits: torch.Tensor = model.forward trimmedInput
+                use lastLogit: torch.Tensor = logits.select(0, 0L).select(0, -1L)
+                let nextToken = sampleLogits lastLogit
+                
+                match nextToken with
+                | tok 
+                    when tok = Settings.eosTokenIdx || tok = Settings.padTokenIdx 
+                        ->
+                        List.rev (nextToken::acc)
+                | _ 
+                        ->
+                        use newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
+                        generate model newInput (steps + 1) maxSteps (nextToken::acc) contextSize temp topK strategy
                 
     let internal main () =
+
+        use scope = torch.NewDisposeScope()
         
         // CUDA® is a parallel computing platform and programming model developed by NVIDIA for general computing on graphical processing units (GPUs).
         let device = match torch.cuda.is_available() with true -> torch.CUDA | false -> torch.CPU
@@ -354,7 +343,7 @@ module Transformer_TorchSharp =
         
         // GENERATING THE OUTPUT SEQUENCE (EXPECTED TO BE [yellow, <eos>]) USING THE TRAINED MODEL
 
-        let generated = generate model inputSeq 0 2 [] contextSize 0.7f topK strategy |> List.rev
+        let generated = generate model inputSeq 0 2 [] contextSize 0.7f topK strategy // |> List.rev
         
         generated |> List.iter (printf "%d ")
         printfn "\n"
@@ -366,4 +355,8 @@ module Transformer_TorchSharp =
         generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
         printfn "\n"
 
+        model.Dispose()
+
+        torch.CurrentDisposeScope.DisposeEverything()
+        
         System.GC.Collect()

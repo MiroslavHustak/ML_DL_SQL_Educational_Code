@@ -3,83 +3,73 @@
 open System
 open TorchSharp
 
+open Settings
+
 module Tokenizer =
 
-    // Define the vocabulary
     let private vocabulary = [ "The"; "Sun"; "is"; "yellow"; "black"; "sky"; "blue"; "<eos>" ]
+
+    // Precompute the word-to-index map (functional, not rebuilt per call)
+    let private wordToIndex =
+        vocabulary
+        |> Seq.mapi (fun i word -> (word, int64 i))
+        |> Map.ofSeq
 
     // Tokenize a single text sequence into indices, appending <eos>
     let private tokenize (text: string) : int64 list =
 
-        // indexuje slovni zasobu
-        let wordToIndex = 
-            vocabulary 
-            |> Seq.mapi (fun i word -> (word, int64 i))
-            |> Map.ofSeq
-
-        text.Split(' ') //indexuje vstupni text a prida <eos>
-        |> List.ofArray
-        |> List.map 
+        text.Split(' ')
+        |> Array.toList
+        |> List.map
             (fun word 
-                -> 
-                match wordToIndex |> Map.tryFind word with
+                ->
+                match Map.tryFind word wordToIndex with
                 | Some idx -> idx
-                | None     -> failwith <| sprintf "Unknown word: %s" word
-            )
-        |> fun tokens -> List.append tokens [7L] // Append <eos> token (index 7)
+                | None     -> failwithf "Unknown word: %s" word)
+        |> fun tokens -> tokens @ [eosTokenIdx]
 
-    // Create input-target pairs for a list of text sequences (immutable)
+    /// Pad sequence to target length (for batching)
+    let private padTo (padIdx: int64) (len: int) (seq: int64 list) =
+        
+        match seq.Length >= len with
+        | true  -> seq |> Seq.take len |> Seq.toList
+        | false -> seq @ List.replicate (len - List.length seq) padIdx
+
+    /// Create input/target arrays, padding with <pad> token
     let internal createInputTargetPairs (sequences: string list) : (int64[,] * int64[,]) =
 
-        let numSequences = sequences |> List.length
-        let seqLength = (tokenize (sequences |> List.head)) |> List.length // Assume all sequences have same length
+        let tokenized = sequences |> List.map tokenize
+        let seqLength = tokenized |> List.map List.length |> List.max
+        let numSequences = tokenized.Length
 
-        // Tokenize all sequences into a list of token arrays
-        let tokenizedSequences = sequences |> List.map tokenize
-
-        // Create input data as a list of lists (one list per sequence)
+        // Inputs are tokens except the last, targets are tokens except the first (classic LM setup)
         let inputs =
-            tokenizedSequences
-            |> List.map id // Input is the full sequence
+            tokenized
+            |> List.map (padTo padTokenIdx seqLength)
 
-        // Create target data as a list of lists (shifted by one, pad with 0L)
         let targets =
-            tokenizedSequences
+            tokenized
             |> List.map 
-                (fun tokens 
+                (fun seq 
                     ->
-                    List.init seqLength 
-                        (fun k 
-                            ->
-                            match k < seqLength - 1 with 
-                            | true  -> tokens |> List.item (k + 1) // Shifted token
-                            | false -> 0L // Pad last position with 0L
-                        )
-            )
+                    let shifted = (seq |> List.tail) @ [padTokenIdx]
+                    padTo padTokenIdx seqLength shifted)
 
-        // Convert the lists of lists into 2D arrays
-        let inputData =
-            Array2D.init numSequences seqLength (fun i j -> inputs.[i].[j])            
-
-        let targetData =
-            Array2D.init numSequences seqLength (fun i j -> targets.[i].[j])
-
-        (inputData, targetData)
+        let inputArr = Array2D.init numSequences seqLength (fun i j -> inputs.[i].[j])
+        let targetArr = Array2D.init numSequences seqLength (fun i j -> targets.[i].[j])
+        inputArr, targetArr
 
     // Convert indices back to words for inference output
     let internal detokenize (indices: int64 list) : string list =
 
-        indices 
+        indices
         |> List.map 
-            (fun idx 
-                -> 
+            (fun idx
+                ->
                 match idx with
-                | idx 
-                    when idx >= 0L && idx < int64 vocabulary.Length 
-                        -> vocabulary |> List.item (int idx)
-                | _ 
-                        -> failwith <| sprintf "Invalid token index: %i" idx
-            )
+                | _ when idx >= 0L && idx < int64 vocabulary.Length
+                    -> vocabulary.[int idx]
+                | _ -> "<UNK>")
 
 module TikTokTokenizer =
 
