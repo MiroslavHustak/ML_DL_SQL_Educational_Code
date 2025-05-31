@@ -2,16 +2,13 @@
 
 open System
 open TorchSharp
-
-open Settings
+open System.Text.RegularExpressions
 
 module Tokenizer =
-
-    let private vocabulary = [ "The"; "Sun"; "is"; "yellow"; "black"; "sky"; "blue"; "<eos>" ]
-
+   
     // Precompute the word-to-index map (functional, not rebuilt per call)
     let private wordToIndex =
-        vocabulary
+        Settings.vocabulary
         |> Seq.mapi (fun i word -> (word, int64 i))
         |> Map.ofSeq
 
@@ -25,17 +22,18 @@ module Tokenizer =
                 ->
                 match Map.tryFind word wordToIndex with
                 | Some idx -> idx
-                | None     -> failwithf "Unknown word: %s" word)
-        |> fun tokens -> tokens @ [eosTokenIdx]
+                | None     -> failwithf "Unknown word: %s" word
+            )
+        |> fun tokens -> tokens @ [Settings.eosTokenIdx]
 
-    /// Pad sequence to target length (for batching)
+    // Pad sequence to target length (for batching)
     let private padTo (padIdx: int64) (len: int) (seq: int64 list) =
         
         match seq.Length >= len with
         | true  -> seq |> Seq.take len |> Seq.toList
         | false -> seq @ List.replicate (len - List.length seq) padIdx
 
-    /// Create input/target arrays, padding with <pad> token
+    // Create input/target arrays, padding with <pad> token
     let internal createInputTargetPairs (sequences: string list) : (int64[,] * int64[,]) =
 
         let tokenized = sequences |> List.map tokenize
@@ -45,15 +43,16 @@ module Tokenizer =
         // Inputs are tokens except the last, targets are tokens except the first (classic LM setup)
         let inputs =
             tokenized
-            |> List.map (padTo padTokenIdx seqLength)
+            |> List.map (padTo Settings.padTokenIdx seqLength)
 
         let targets =
             tokenized
             |> List.map 
                 (fun seq 
                     ->
-                    let shifted = (seq |> List.tail) @ [padTokenIdx]
-                    padTo padTokenIdx seqLength shifted)
+                    let shifted = (seq |> List.tail) @ [Settings.padTokenIdx]
+                    padTo Settings.padTokenIdx seqLength shifted
+                )
 
         let inputArr = Array2D.init numSequences seqLength (fun i j -> inputs.[i].[j])
         let targetArr = Array2D.init numSequences seqLength (fun i j -> targets.[i].[j])
@@ -67,9 +66,79 @@ module Tokenizer =
             (fun idx
                 ->
                 match idx with
-                | _ when idx >= 0L && idx < int64 vocabulary.Length
-                    -> vocabulary.[int idx]
-                | _ -> "<UNK>") //common placeholder token used in Natural Language Processing (NLP) meaning "unknown".
+                | _ when idx >= 0L && idx < int64 Settings.vocabulary.Length
+                    -> Settings.vocabulary.[int idx]
+                | _ -> "<UNK>"
+            ) //common placeholder token used in Natural Language Processing (NLP) meaning "unknown".
+
+module Tokenizer2 =
+
+    open System.Text.RegularExpressions
+       
+    let internal wordToIndex =
+        Settings2.vocabulary
+        |> Seq.mapi (fun i word -> (word, int64 i))
+        |> Map.ofSeq
+
+    let internal eosTokenIdx = Map.find "<eos>" wordToIndex
+    let internal padTokenIdx = Map.find "<pad>" wordToIndex
+
+    let internal tokenize (text: string) : int64 list =
+
+        let pattern = @"<[^>\s]+>|[\w]+|[^\w\s]"
+
+        Regex.Matches(text, pattern)
+        |> Seq.cast<Match>
+        |> Seq.map (fun m -> m.Value)
+        |> Seq.map
+            (fun word 
+                ->
+                match Map.tryFind word wordToIndex with
+                | Some idx -> idx
+                | None     -> failwithf "Unknown word: %s" word)
+        |> Seq.toList
+
+    // Pad sequence to target length (for batching)
+    let private padTo (padIdx: int64) (len: int) (seq: int64 list) =
+
+        match seq.Length >= len with
+        | true  -> seq |> Seq.take len |> Seq.toList
+        | false -> seq @ List.replicate (len - List.length seq) padIdx
+
+    // Create input/target arrays, padding with <pad> token
+    let internal createInputTargetPairs (sequences: string list) : (int64[,] * int64[,]) =
+        let tokenized = sequences |> List.map tokenize
+        let seqLength = tokenized |> List.map List.length |> List.max
+        let numSequences = tokenized.Length
+
+        // Inputs are tokens except the last, targets are tokens except the first (classic LM setup)
+        let inputs =
+            tokenized
+            |> List.map (padTo padTokenIdx seqLength)
+
+        let targets =
+            tokenized
+            |> List.map 
+                (fun seq
+                    ->
+                    let shifted = (seq |> List.tail) @ [padTokenIdx]
+                    padTo padTokenIdx seqLength shifted
+                )
+
+        let inputArr = Array2D.init numSequences seqLength (fun i j -> inputs.[i].[j])
+        let targetArr = Array2D.init numSequences seqLength (fun i j -> targets.[i].[j])
+        inputArr, targetArr
+
+    // Convert indices back to words for inference output
+    let internal detokenize (indices: int64 list) : string list =
+        indices
+        |> List.map
+            (fun idx
+                ->
+                match idx >= 0L && idx < int64 Settings2.vocabulary.Length with
+                | true  -> Settings2.vocabulary |> List.item (int idx)
+                | false -> "<UNK>"
+            )
 
 module TikTokTokenizer =
 

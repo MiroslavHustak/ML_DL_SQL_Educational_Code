@@ -324,8 +324,8 @@ module Transformer_TorchSharp =
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
         
         // INITIALIZING THE ADAM OPTIMIZER FOR FINE-TUNING
-        use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)       
-        
+        use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)     
+
         // SETTING THE MODEL TO TRAINING MODE FOR FINE-TUNING
         model.train()
         
@@ -333,17 +333,18 @@ module Transformer_TorchSharp =
         trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
         
         printfn "Generating sequence after fine-tuning..."
+
+        model.``to``("cpu") |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>> //redundant here, but kept for future use
         
         // SETTING THE MODEL TO EVALUATION MODE FOR INFERENCE
         model.eval()
         
         // DEFINING THE INPUT SEQUENCE (PROMPT) FOR INFERENCE
-        use inputSeq = torch.tensor([|0L; 1L; 2L|], device = device).unsqueeze 0L
-        
+        use inputSeq = (torch.tensor([|0L; 1L; 2L|], device = device).unsqueeze 0L).``to``(torch.CPU) //torch.CPU redundant here, but kept for future use
+                
         printf "Generated sequence (token IDs): "
         
         // GENERATING THE OUTPUT SEQUENCE (EXPECTED TO BE [yellow, <eos>]) USING THE TRAINED MODEL
-
         let generated = generate model inputSeq 0 2 [] contextSize 0.7f topK strategy // |> List.rev
         
         generated |> List.iter (printf "%d ")

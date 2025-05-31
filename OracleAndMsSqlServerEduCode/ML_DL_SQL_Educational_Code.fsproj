@@ -11,8 +11,8 @@
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\MLP\MultipleHiddenLayerMLP.fs" />
     <Content Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\Notes.txt" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\Settings.fs" />
-    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\DataSetSimulation.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\CustomTokenizer.fs" />
+    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\DataSetSimulation.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\Transformer.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\Transformer2.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\TransformerEducation.fs" />
