@@ -43,31 +43,41 @@ module Transformer_TorchSharp2 =  //variant 2
         do self.RegisterComponents()
 
         override _.forward x =
+
             match x.shape with
-            | [|batch; seq; dmodel|] when dmodel = dModel ->
+            | [|batch; seq; dmodel|] 
+                when dmodel = dModel
+                ->
                 match dModel % nHeads with
-                | 0L ->
+                | 0L
+                    ->
                     let headDim = dModel / nHeads
                     let reshapedShape = [|batch; seq; 3L; nHeads; headDim|]
+                    
                     use qkv = qkvProjection.forward x
                     use qkvReshaped = qkv.view(reshapedShape)
+                    
                     use q = qkvReshaped.select(2, 0L).transpose(1, 2)
                     use k = qkvReshaped.select(2, 1L).transpose(1, 2)
                     use v = qkvReshaped.select(2, 2L).transpose(1, 2)
+                    
                     use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim)
                     use mask = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
                     use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
                     use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
+                    
                     let contextVector = torch.matmul(attentionWeights, v)
                     use contextVector =
                         contextVector
                         |> (fun cv -> cv.transpose(1, 2))
                         |> (fun cv -> cv.contiguous())
                         |> (fun cv -> cv.view(batch, seq, dModel))
+                    
                     let out1 =
                         contextVector
                         |> outputProjection.forward
                         |> (fun output -> x + output)
+                    
                     let out2 =
                         out1
                         |> layerNorm1.forward
@@ -75,19 +85,25 @@ module Transformer_TorchSharp2 =  //variant 2
                         |> gelu
                         |> feedForward2.forward
                         |> dropout.forward
+                    
                     out1 + out2
                     |> layerNorm2.forward
+
                 | _ ->
                     failwithf "dModel (%d) must be divisible by nHeads (%d)" dModel nHeads
+
             | shapeArr ->
                 failwithf "Input tensor must have shape [batch; seq; dModel] but got %A" shapeArr
 
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) : torch.Tensor =
+
         let position = torch.arange(seqLen, dtype = torch.float32).unsqueeze(1)
         let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype = torch.float32) * (-Math.Log 10000.0 / float dModel))
+        
         let encodings = torch.zeros([|seqLen; dModel|])
         encodings.index_copy_(1, torch.arange(0L, dModel, 2L), torch.sin(position * divTerm)) |> ignore
         encodings.index_copy_(1, torch.arange(1L, dModel, 2L), torch.cos(position * divTerm)) |> ignore
+        
         encodings
 
     type private Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int) as self =
@@ -120,33 +136,37 @@ module Transformer_TorchSharp2 =  //variant 2
 
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
                            (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
+
         [0 .. maxEpochs - 1]
-        |> List.iter (fun epoch ->
-            let counter = epoch + 1
+        |> List.iter
+            (fun epoch 
+                ->
+                let counter = epoch + 1
 
-            optimizer.zero_grad()
+                optimizer.zero_grad()
 
-            let output = model.forward input
-            let loss = lossFn.forward(output.view(-1L, int64 vocabSize), target.view(-1L))
+                let output = model.forward input
+                let loss = lossFn.forward(output.view(-1L, int64 vocabSize), target.view(-1L))
 
-            let perplexity = torch.exp(loss).item<float32>() 
+                let perplexity = torch.exp(loss).item<float32>() 
 
-            try
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float>
-            with
-            | :? System.StackOverflowException as ex ->
-                printfn "StackOverflowException in %s, epoch %d: %s" phase counter (string ex.Message)
-            | ex ->
-                printfn "%s" (string ex.Message)
+                try
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float>
+                with
+                | :? System.StackOverflowException as ex ->
+                    printfn "StackOverflowException in %s, epoch %d: %s" phase counter (string ex.Message)
+                | ex ->
+                    printfn "%s" (string ex.Message)
 
-            optimizer.step() |> ignore                
+                optimizer.step() |> ignore                
         
-            match counter % 20 with
-            | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
-            | _ -> ()
-            loss.Dispose()
-            output.Dispose()
+                match counter % 20 with
+                | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
+                | _ -> ()
+
+                loss.Dispose()
+                output.Dispose()
         )
 
     // not tail-recursive
@@ -159,35 +179,47 @@ module Transformer_TorchSharp2 =  //variant 2
                                           steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: string) =
         
         let trimInput (input: torch.Tensor) =
+
             match input.shape.[1] > contextSize with
             | true  -> input.narrow(1, int64 (int input.shape.[1] - int contextSize), contextSize)
             | false -> input
 
         let sampleLogits (logits: torch.Tensor) =
+
             match strategy with
-            | "top-k" ->
+            | "top-k" 
+                ->
                 let struct (probs, indices) = torch.topk(logits / temp, int (min topK (int64 vocabSize)), dim = 0)
                 let probs = softmax(probs, dim = 0L)
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
-            | "greedy" ->
+
+            | "greedy" 
+                ->
                 torch.argmax(logits, dim = 0).item<int64>()
-            | s ->
+
+            | s 
+                ->
                 failwithf "Unsupported sampling strategy: %s" s
 
         match steps >= maxSteps with
-        | true -> List.rev acc
-        | false ->
+        | true  
+            -> List.rev acc
+        | false 
+            ->
             use _ = torch.no_grad()
+            
             let trimmedInput = trimInput inputSeq
             let logits: torch.Tensor = model.forward trimmedInput
             let lastLogit: torch.Tensor = logits.select(0, 0L).select(0, -1L)
+            
             let nextToken = sampleLogits lastLogit
             match nextToken = eosTokenIdx || nextToken = padTokenIdx with
-            | true -> List.rev (nextToken :: acc)
+            | true  ->
+                    List.rev (nextToken :: acc)
             | false ->
-                let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
-                generate model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy      
+                    let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
+                    generate model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy      
 
     let internal main () =
 
@@ -230,7 +262,7 @@ module Transformer_TorchSharp2 =  //variant 2
         model.``to``("cpu") |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
         model.eval()
         
-        let question = "What is the colour of the Sun? <sep>"
+        let question = "What is the colour of the sky? <sep>"
         let questionTokens = Tokenizer2.tokenize question |> Array.ofList
         use inputSeq = torch.tensor(questionTokens, device = torch.CPU).unsqueeze 0L
         
@@ -241,10 +273,15 @@ module Transformer_TorchSharp2 =  //variant 2
         printfn "\n"
         
         printf "Generated sequence (words): "
-        generated |> List.iter (fun id ->
-            match id >= 0L && id < int64 vocabulary.Length with
-            | true -> printf "%s " (vocabulary |> List.item (int id))
-            | false -> printf "<UNK> ")
+        generated 
+        |> List.iter
+            (fun id 
+                ->
+                match id >= 0L && id < int64 vocabulary.Length with
+                | true  -> printf "%s " (vocabulary |> List.item (int id))
+                | false -> printf "<UNK> "
+            )
+
         printfn "\n"
 
         model.Dispose()

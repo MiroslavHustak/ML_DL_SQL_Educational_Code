@@ -95,7 +95,8 @@ module Tokenizer2 =
                 ->
                 match Map.tryFind word wordToIndex with
                 | Some idx -> idx
-                | None     -> failwithf "Unknown word: %s" word)
+                | None     -> failwithf "Unknown word: %s" word
+            )
         |> Seq.toList
 
     // Pad sequence to target length (for batching)
@@ -107,6 +108,7 @@ module Tokenizer2 =
 
     // Create input/target arrays, padding with <pad> token
     let internal createInputTargetPairs (sequences: string list) : (int64[,] * int64[,]) =
+
         let tokenized = sequences |> List.map tokenize
         let seqLength = tokenized |> List.map List.length |> List.max
         let numSequences = tokenized.Length

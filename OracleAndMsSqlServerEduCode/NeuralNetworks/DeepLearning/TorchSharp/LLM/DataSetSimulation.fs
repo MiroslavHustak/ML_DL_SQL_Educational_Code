@@ -54,16 +54,17 @@ module TextData2 =
     /// Returns a shuffled list of Q&A sequences for pre-training (as single strings)
     let internal getSequences () : string list =
 
-        let qaPairs = [
-            "What is the colour of the Sun? <sep> The colour of the Sun is yellow."
-            "What is the colour of the sky? <sep> The colour of the sky is blue."
-            "What colour is the Sun? <sep> yellow."
-            "What colour is the sky? <sep> blue."
-            "Is the Sun black? <sep> No."
-            "Is the sky yellow? <sep> No."
-            "Is the Sun yellow? <sep> Yes."
-            "Is the sky blue? <sep> Yes."
-        ]
+        let qaPairs =
+            [
+                "What is the colour of the Sun? <sep> The colour of the Sun is yellow."
+                "What is the colour of the sky? <sep> The colour of the sky is blue."
+                "What colour is the Sun? <sep> yellow."
+                "What colour is the sky? <sep> blue."
+                "Is the Sun black? <sep> No."
+                "Is the sky yellow? <sep> No."
+                "Is the Sun yellow? <sep> Yes."
+                "Is the sky blue? <sep> Yes."
+            ]
 
         let nExamplesPerPair = 16
         let qa = List.collect (fun s -> List.replicate nExamplesPerPair s) qaPairs
