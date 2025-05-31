@@ -69,7 +69,7 @@ module Tokenizer =
                 match idx with
                 | _ when idx >= 0L && idx < int64 vocabulary.Length
                     -> vocabulary.[int idx]
-                | _ -> "<UNK>")
+                | _ -> "<UNK>") //common placeholder token used in Natural Language Processing (NLP) meaning "unknown".
 
 module TikTokTokenizer =
 

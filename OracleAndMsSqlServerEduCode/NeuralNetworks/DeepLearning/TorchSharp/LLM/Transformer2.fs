@@ -139,7 +139,7 @@ module Transformer_TorchSharp2 =  //variant 2
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)
 
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
-                          (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
+                           (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
 
         [0 .. maxEpochs - 1]
         |> List.iter 
@@ -243,7 +243,7 @@ module Transformer_TorchSharp2 =  //variant 2
         printfn "Starting pre-training..."
 
         use (model: torch.nn.Module<torch.Tensor,torch.Tensor>) = (new Transformer(int64 Settings.vocabSize, Settings.dModel, Settings.nHeads, Settings.numLayers)).``to``(device)
-        use lossFn = new CrossEntropyLoss(ignore_index=Settings.padTokenIdx)
+        use lossFn = new CrossEntropyLoss(ignore_index = Settings.padTokenIdx)
         use optimizer = torch.optim.Adam(model.parameters(), lr = Settings.learningRate)
         
         model.train()

@@ -36,7 +36,7 @@ module Settings =
     let [<Literal>] internal topK = 3L
     let [<Literal>] internal contextSize = 32 // Smaller context, fits short sequences
     let [<Literal>] internal learningRate = 0.01 // Faster learning for quick overfitting
-    let [<Literal>] internal strategy = "greedy"   //"top-k" //"greedy"
+    let [<Literal>] internal strategy = "top-k"   //"top-k" //"greedy"
     
     
     
