@@ -179,7 +179,9 @@ module Transformer_TorchSharp =
        [0 .. maxEpochs - 1]
         |> List.iter
             (fun epoch
-                ->               
+                ->  
+                let counter = (+) epoch 1
+
                 optimizer.zero_grad()
                 
                 // COMPUTING LOGITS (emb @ W^T + b), THEN UPDATES EMBEDDING VECTORS, OUTPUT LAYER WEIGHTS, AND BIASES BASED ON LOSS
@@ -205,15 +207,14 @@ module Transformer_TorchSharp =
                 | :? System.StackOverflowException 
                     as ex
                         ->
-                        printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch + 1) (string ex.Message)
+                        printfn "StackOverflowException in %s, epoch %d: %s" phase counter (string ex.Message)
                         Console.ReadLine() |> ignore
                 | ex 
                         ->
                         printfn "%s" (string ex.Message)
                 
-                optimizer.step() |> ignore
-                
-                let counter = (+) epoch 1
+                optimizer.step() |> ignore                
+               
                 match counter % 20 = 0 with
                 | true  -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity                       
                 | false -> ()

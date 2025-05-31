@@ -7,6 +7,14 @@ open TorchSharp.Modules
 
 open type torch.nn
 open type torch.nn.functional
+
+module Option = 
+
+    let internal ofNull (value : 'nullableValue) =
+
+        match System.Object.ReferenceEquals(value, null) with //The "value" type can be even non-nullable, and ReferenceEquals will still work.
+        | true  -> None
+        | false -> Some value       
     
 module Settings =
     

@@ -145,6 +145,8 @@ module Transformer_TorchSharp2 =  //variant 2
         |> List.iter 
             (fun epoch 
                 ->
+                let counter = (+) epoch 1
+
                 optimizer.zero_grad()
 
                 use output = model.forward input
@@ -159,20 +161,24 @@ module Transformer_TorchSharp2 =  //variant 2
                 | :? System.StackOverflowException
                     as ex 
                         ->
-                        printfn "StackOverflowException in %s, epoch %d: %s" phase (epoch+1) (string ex.Message)
+                        printfn "StackOverflowException in %s, epoch %d: %s" phase counter (string ex.Message)
                 | ex 
                         ->
                         printfn "%s" (string ex.Message)
 
-                optimizer.step() |> ignore
-            
-                let counter = (+) epoch 1
+                optimizer.step() |> ignore                
             
                 match counter % 20 = 0 with
                 | true  -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity                       
                 | false -> ()  
         )
 
+    // not tail-recursive
+    (*
+    The warning persists because of use bindings before the recursive call.
+    This is a known limitation in F# and similar languages with resource management.
+    Your function is still efficient, and the stack will not overflow for reasonable recursion depths.
+    *)
     let rec [<TailCall>] private generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor)
                                           steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: string) =
         
@@ -215,11 +221,11 @@ module Transformer_TorchSharp2 =  //variant 2
                 | tok 
                     when tok = Settings.eosTokenIdx || tok = Settings.padTokenIdx 
                         -> 
-                        List.rev (nextToken::acc)
+                        List.rev (nextToken :: acc)
                 | _ 
                         ->
                         use newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
-                        generate model newInput (steps + 1) maxSteps (nextToken::acc) contextSize temp topK strategy
+                        generate model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy      
 
     let internal main () =
 
@@ -263,6 +269,7 @@ module Transformer_TorchSharp2 =  //variant 2
        
         printf "Generated sequence (token IDs): "
         let generated = generate model inputSeq 0 2 [] Settings.contextSize 1.0f Settings.topK Settings.strategy
+       
         generated |> List.iter (printf "%d ")        
         printfn "\n"
 
