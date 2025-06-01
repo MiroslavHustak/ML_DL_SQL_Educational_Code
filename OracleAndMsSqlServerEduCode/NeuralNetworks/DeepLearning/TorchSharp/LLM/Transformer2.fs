@@ -261,12 +261,13 @@ module Transformer_TorchSharp2 =  //variant 2
         trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
         printfn "Generating sequence after fine-tuning..."
-        
-        model.``to``("cpu") |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
-        model.eval()
-        
+               
         let question = "What is the colour of the sky? <sep>"
         let questionTokens = Tokenizer2.tokenize question |> Array.ofList
+
+        model.``to``("cpu") |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
+        model.eval()
+
         use inputSeq = torch.tensor(questionTokens, device = torch.CPU).unsqueeze 0L
         
         let generated = generateCPS model inputSeq 0 64 [] contextSize temp topK strategy id
@@ -277,7 +278,6 @@ module Transformer_TorchSharp2 =  //variant 2
         printfn "\n"
         
         printf "Generated sequence (words): "
-
         generated 
         |> List.iter
             (fun id 
@@ -292,5 +292,4 @@ module Transformer_TorchSharp2 =  //variant 2
         model.Dispose()
 
         torch.CurrentDisposeScope.DisposeEverything()
-
         System.GC.Collect()

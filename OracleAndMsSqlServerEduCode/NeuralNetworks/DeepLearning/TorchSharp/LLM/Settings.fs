@@ -66,7 +66,7 @@ module Settings2 =
 
     let [<Literal>] internal dModel = 48L //  Embeddings of size 48
     let [<Literal>] internal epochs = 180  
-    let [<Literal>] internal fineTuneEpochs = 50
+    let [<Literal>] internal fineTuneEpochs = 40
     let [<Literal>] internal fineTuneBatch = 10L
     let [<Literal>] internal nHeads = 4L   
     let [<Literal>] internal numLayers = 4 //number of transformer decoder layers
