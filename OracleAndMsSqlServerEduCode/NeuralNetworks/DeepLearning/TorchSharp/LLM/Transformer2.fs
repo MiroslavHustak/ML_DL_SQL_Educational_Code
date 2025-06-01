@@ -248,7 +248,7 @@ module Transformer_TorchSharp2 =  //variant 2
 
         printfn "Starting pre-training..."
 
-        use (model: torch.nn.Module<torch.Tensor,torch.Tensor>) = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers)).``to``(device)
+        use (model: torch.nn.Module<torch.Tensor, torch.Tensor>) = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers)).``to``(device)
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
@@ -276,7 +276,7 @@ module Transformer_TorchSharp2 =  //variant 2
         let questionTokens = Tokenizer2.tokenize question |> Array.ofList
         use inputSeq = torch.tensor(questionTokens, device = torch.CPU).unsqueeze 0L
         
-        let generated = generate model inputSeq 0 64 [] contextSize 1.0f topK strategy
+        let generated = generate model inputSeq 0 64 [] contextSize temp topK strategy
         
         printf "Generated sequence (token IDs): "
         generated |> List.iter (printf "%d ")
