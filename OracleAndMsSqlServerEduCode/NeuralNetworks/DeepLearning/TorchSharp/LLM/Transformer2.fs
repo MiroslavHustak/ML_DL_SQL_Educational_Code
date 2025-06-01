@@ -174,17 +174,12 @@ module Transformer_TorchSharp2 =  //variant 2
 
                 loss.Dispose()
                 output.Dispose()
-        )
+        )                    
 
-    // not tail-recursive
-    (*
-    The warning persists because of use bindings before the recursive call.
-    This is a known limitation in F# and similar languages with resource management.
-    Your function is still efficient, and the stack will not overflow for reasonable recursion depths.
-    *)
-    let rec [<TailCall>] private generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor)
-                                          steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: string) =
-        
+    let rec generateCPS (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) (steps: int) 
+                        (maxSteps: int) (acc: int64 list) (contextSize: int64) (temp: float32) (topK: int64) (strategy: string)
+                        (cont: int64 list -> 'a) : 'a =
+
         let trimInput (input: torch.Tensor) =
 
             match input.shape.[1] > contextSize with
@@ -201,7 +196,7 @@ module Transformer_TorchSharp2 =  //variant 2
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
 
-            | "greedy" 
+            | "greedy"
                 ->
                 torch.argmax(logits, dim = 0).item<int64>()
 
@@ -210,25 +205,23 @@ module Transformer_TorchSharp2 =  //variant 2
                 failwithf "Unsupported sampling strategy: %s" s
 
         match steps >= maxSteps with
-        | true  
-            -> 
-            List.rev acc
+        | true  -> 
+                List.rev >> cont <| acc
+        | false ->
+                use _ = torch.no_grad()
 
-        | false 
-            ->
-            use _ = torch.no_grad()
-            
-            let trimmedInput = trimInput inputSeq
-            let logits: torch.Tensor = model.forward trimmedInput
-            let lastLogit: torch.Tensor = logits.select(0, 0L).select(0, -1L)
-            
-            let nextToken = sampleLogits lastLogit
-            match nextToken = eosTokenIdx || nextToken = padTokenIdx with
-            | true  ->
-                    List.rev (nextToken :: acc)
-            | false ->
-                    let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
-                    generate model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy      
+                let trimmedInput = trimInput inputSeq
+                let logits: torch.Tensor = model.forward trimmedInput
+                let lastLogit: torch.Tensor = logits.select(0, 0L).select(0, -1L)
+        
+                let nextToken = sampleLogits lastLogit
+
+                match nextToken = eosTokenIdx || nextToken = padTokenIdx with
+                | true  ->
+                        List.rev >> cont <| nextToken :: acc
+                | false ->
+                        let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
+                        generateCPS model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy cont
 
     let internal main () =
 
@@ -248,7 +241,7 @@ module Transformer_TorchSharp2 =  //variant 2
 
         printfn "Starting pre-training..."
 
-        use (model: torch.nn.Module<torch.Tensor, torch.Tensor>) = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers)).``to``(device)
+        use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers)).``to``(device)
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
@@ -276,7 +269,7 @@ module Transformer_TorchSharp2 =  //variant 2
         let questionTokens = Tokenizer2.tokenize question |> Array.ofList
         use inputSeq = torch.tensor(questionTokens, device = torch.CPU).unsqueeze 0L
         
-        let generated = generate model inputSeq 0 64 [] contextSize temp topK strategy
+        let generated = generateCPS model inputSeq 0 64 [] contextSize temp topK strategy id
         
         printf "Generated sequence (token IDs): "
         generated |> List.iter (printf "%d ")

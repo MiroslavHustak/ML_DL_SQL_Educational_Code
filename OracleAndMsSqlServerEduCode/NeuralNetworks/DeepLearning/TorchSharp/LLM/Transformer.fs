@@ -221,6 +221,7 @@ module Transformer_TorchSharp =
             )
     
     // Generates tokens as part of the inference process
+    // not tail-recursive
     let rec [<TailCall>] private generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: string) =
         
         let trimInput (input: torch.Tensor) =
