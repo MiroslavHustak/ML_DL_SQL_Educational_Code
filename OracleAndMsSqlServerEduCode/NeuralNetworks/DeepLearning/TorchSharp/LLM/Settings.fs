@@ -7,14 +7,6 @@ open TorchSharp.Modules
 
 open type torch.nn
 open type torch.nn.functional
-
-module Option = 
-
-    let internal ofNull (value : 'nullableValue) =
-
-        match System.Object.ReferenceEquals(value, null) with //The "value" type can be even non-nullable, and ReferenceEquals will still work.
-        | true  -> None
-        | false -> Some value       
     
 module Settings =
     
@@ -27,15 +19,16 @@ module Settings =
     let internal batch = 32L
 
     let [<Literal>] internal dModel = 48L //  Embeddings of size 48
-    let [<Literal>] internal epochs = 80  // Fewer epochs for reasonable CPU training
+    let [<Literal>] internal epochs = 80   
     let [<Literal>] internal fineTuneEpochs = 0 //works even without fine tuning
     let [<Literal>] internal fineTuneBatch = 10L
-    let [<Literal>] internal nHeads = 4L   // Smaller head count for small models
+    let [<Literal>] internal nHeads = 4L   
     let [<Literal>] internal numLayers = 2 //number of transformer decoder layers
     let [<Literal>] internal dropoutRate = 0.1f
-    let [<Literal>] internal topK = 3L
-    let [<Literal>] internal contextSize = 32 // Smaller context, fits short sequences
-    let [<Literal>] internal learningRate = 0.01 // Faster learning for quick overfitting
+    let [<Literal>] internal temp = 0.7f
+    let [<Literal>] internal topK = 3L //it picks the next word from the 3 most likely ones
+    let [<Literal>] internal contextSize = 32 
+    let [<Literal>] internal learningRate = 0.01 
     let [<Literal>] internal strategy = "top-k"   //"top-k" //"greedy"
 
 module Settings2 =
@@ -72,13 +65,14 @@ module Settings2 =
     let internal batch = 32L
 
     let [<Literal>] internal dModel = 48L //  Embeddings of size 48
-    let [<Literal>] internal epochs = 180  // Fewer epochs for reasonable CPU training
+    let [<Literal>] internal epochs = 180  
     let [<Literal>] internal fineTuneEpochs = 20
     let [<Literal>] internal fineTuneBatch = 10L
-    let [<Literal>] internal nHeads = 4L   // Smaller head count for small models
+    let [<Literal>] internal nHeads = 4L   
     let [<Literal>] internal numLayers = 4 //number of transformer decoder layers
     let [<Literal>] internal dropoutRate = 0.01f
+    let [<Literal>] internal temp = 0.3f
     let [<Literal>] internal topK = 5L
     let [<Literal>] internal contextSize = 32 
     let [<Literal>] internal learningRate = 0.001 
-    let [<Literal>] internal strategy = "greedy" //"top-k" //"greedy"
+    let [<Literal>] internal strategy = "greedy"  //"top-k" //"greedy"

@@ -92,7 +92,8 @@ module Transformer_TorchSharp2 =  //variant 2
                 | _ ->
                     failwithf "dModel (%d) must be divisible by nHeads (%d)" dModel nHeads
 
-            | shapeArr ->
+            | shapeArr
+                ->
                 failwithf "Input tensor must have shape [batch; seq; dModel] but got %A" shapeArr
 
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) : torch.Tensor =
@@ -126,12 +127,15 @@ module Transformer_TorchSharp2 =  //variant 2
         do self.RegisterComponents()
 
         override _.forward x =
+
             let emb = embedding.forward x
             let seqLen = x.shape |> Array.item 1
             let embWithPos = emb + posEnc.narrow(0L, 0L, seqLen).``to``(x.device)
             let embWithPos = dropout.forward embWithPos
+            
             let decoderOut = Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithPos decoderLayers
             let normOut = norm.forward decoderOut
+            
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)
 
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
@@ -204,7 +208,9 @@ module Transformer_TorchSharp2 =  //variant 2
 
         match steps >= maxSteps with
         | true  
-            -> List.rev acc
+            -> 
+            List.rev acc
+
         | false 
             ->
             use _ = torch.no_grad()
@@ -225,9 +231,10 @@ module Transformer_TorchSharp2 =  //variant 2
 
         use scope = torch.NewDisposeScope()
 
-        let device = match torch.cuda.is_available() with
-                     | true -> torch.CUDA
-                     | false -> torch.CPU
+        let device = 
+            match torch.cuda.is_available() with
+            | true  -> torch.CUDA
+            | false -> torch.CPU
         
         printfn "Using device: %A" <| (string device).ToUpper()
 
@@ -273,6 +280,7 @@ module Transformer_TorchSharp2 =  //variant 2
         printfn "\n"
         
         printf "Generated sequence (words): "
+
         generated 
         |> List.iter
             (fun id 

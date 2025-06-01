@@ -42,7 +42,13 @@ module Transformer_TorchSharpEducation =
     let [<Literal>] private nHeads = 12L  //AttentionHeadCount v prednasce, taky jich ma 12
     let [<Literal>] private numLayers = 2
     let [<Literal>] private dropoutRate = 0.1f
-    let [<Literal>] private topK = 3L
+    let [<Literal>] internal temp = 1.0f
+    (*
+    Temperature Scaling: A method to control randomness in text generation.
+    Lower temperature (e.g. 0.2) → more predictable, focused output.
+    Higher temperature (e.g. 1.0+) → more random and creative output.
+    *)
+    let [<Literal>] private topK = 3L //Limits the model to choosing from only the top k most likely next words.
     let [<Literal>] private contextSize = 1024
     let [<Literal>] private learningRate = 0.001    
 

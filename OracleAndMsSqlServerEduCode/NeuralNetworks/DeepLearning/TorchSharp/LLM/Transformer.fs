@@ -345,7 +345,7 @@ module Transformer_TorchSharp =
         printf "Generated sequence (token IDs): "
         
         // GENERATING THE OUTPUT SEQUENCE (EXPECTED TO BE [yellow, <eos>]) USING THE TRAINED MODEL
-        let generated = generate model inputSeq 0 2 [] contextSize 0.7f topK strategy // |> List.rev
+        let generated = generate model inputSeq 0 2 [] contextSize temp topK strategy // |> List.rev
         
         generated |> List.iter (printf "%d ")
         printfn "\n"
