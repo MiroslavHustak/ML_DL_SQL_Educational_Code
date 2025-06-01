@@ -240,10 +240,12 @@ module Transformer_TorchSharp =
                 indices.[idx].item<int64>()
 
             | "greedy" 
-                -> torch.argmax(logits, dim = 0).item<int64>()
+                -> 
+                torch.argmax(logits, dim = 0).item<int64>()
 
             | _ 
-                -> failwithf "Unsupported sampling strategy: %s" strategy
+                -> 
+                failwithf "Unsupported sampling strategy: %s" strategy
 
         match steps >= maxSteps with
         | true  ->
@@ -348,6 +350,7 @@ module Transformer_TorchSharp =
         let generated = generate model inputSeq 0 2 [] contextSize temp topK strategy // |> List.rev
         
         generated |> List.iter (printf "%d ")
+
         printfn "\n"
 
         printf "Generated sequence (words): "
@@ -355,6 +358,7 @@ module Transformer_TorchSharp =
         let results = generated |> List.map (fun id -> vocabulary |> List.item (int id))
 
         generated |> List.iter (fun id -> printf "%s " (vocabulary |> List.item (int id)))
+
         printfn "\n"
 
         model.Dispose()

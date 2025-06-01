@@ -158,10 +158,13 @@ module Transformer_TorchSharp2 =  //variant 2
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float>
                 with
-                | :? System.StackOverflowException as ex ->
-                    printfn "StackOverflowException in %s, epoch %d: %s" phase counter (string ex.Message)
-                | ex ->
-                    printfn "%s" (string ex.Message)
+                | :? System.StackOverflowException 
+                    as ex 
+                        ->
+                        printfn "StackOverflowException in %s, epoch %d: %s" phase counter (string ex.Message)
+                | ex
+                        ->
+                        printfn "%s" (string ex.Message)
 
                 optimizer.step() |> ignore                
         
@@ -277,6 +280,7 @@ module Transformer_TorchSharp2 =  //variant 2
         
         printf "Generated sequence (token IDs): "
         generated |> List.iter (printf "%d ")
+
         printfn "\n"
         
         printf "Generated sequence (words): "
