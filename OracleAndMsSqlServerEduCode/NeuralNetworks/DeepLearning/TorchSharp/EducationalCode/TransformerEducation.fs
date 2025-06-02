@@ -23,6 +23,13 @@ module Transformer_TorchSharpEducation =
     Acknowledgments:
     - A lecture on creating an LLM with TorchSharp by Tomáš Herceg (https://www.youtube.com/watch?v=tW5RiP765hw&t=12s).
     - Sebastian Raschka, "Build a Large Language Model (From Scratch)".
+
+    Where can you skip null checks in TorchSharp F# code?
+    * Tensor creation (torch.tensor, torch.zeros, etc.)
+    * Layer/module construction (Linear, Embedding, etc.)
+    * Module forward passes (outputs or intermediate tensors)
+    * Most TorchSharp utility functions and methods
+    These will throw exceptions on error, not return null.
     *)
     //*******************************************************************
 
