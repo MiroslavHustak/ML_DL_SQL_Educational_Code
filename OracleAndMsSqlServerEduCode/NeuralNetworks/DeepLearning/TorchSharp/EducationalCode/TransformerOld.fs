@@ -221,7 +221,7 @@ module Transformer_TorchSharp =
     
     // Generates tokens as part of the inference process
     // not tail-recursive
-    let rec [<TailCall>] private generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: string) =
+    let rec [<TailCall>] private generate (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) steps maxSteps acc contextSize (temp: float32) (topK: int64) (strategy: Strategy) =
         
         let trimInput (input: torch.Tensor) =
 
@@ -230,22 +230,22 @@ module Transformer_TorchSharp =
             | false -> input
 
         let sampleLogits (logits: torch.Tensor) =
-
+            
             match strategy with
-            | "top-k"
+            | Top_k 
                 ->
-                let struct (probs, indices) = torch.topk(logits / temp, int (min topK (int64 Settings.vocabSize)), dim = 0)
+                let struct (probs, indices) = torch.topk(logits / temp, int (min topK (int64 vocabSize)), dim = 0)
                 let probs = softmax(probs, dim = 0L)
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
-
-            | "greedy" 
-                -> 
+            
+            | Greedy
+                ->
                 torch.argmax(logits, dim = 0).item<int64>()
-
-            | _ 
-                -> 
-                failwithf "Unsupported sampling strategy: %s" strategy
+            
+            | S 
+                ->
+                failwithf "Unsupported sampling strategy: %A" S
 
         match steps >= maxSteps with
         | true  ->

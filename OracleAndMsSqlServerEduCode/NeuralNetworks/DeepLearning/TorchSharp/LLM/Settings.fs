@@ -7,6 +7,11 @@ open TorchSharp.Modules
 
 open type torch.nn
 open type torch.nn.functional
+
+type Strategy = 
+    | Top_k
+    | Greedy
+    | S
     
 module Settings =
     
@@ -29,7 +34,8 @@ module Settings =
     let [<Literal>] internal topK = 3L //it picks the next word from the 3 most likely ones
     let [<Literal>] internal contextSize = 32 
     let [<Literal>] internal learningRate = 0.01 
-    let [<Literal>] internal strategy = "top-k"   //"top-k" //"greedy"
+    
+    let internal strategy = Top_k   //"top-k" //"greedy"
 
 module Settings2 =
     
@@ -75,4 +81,5 @@ module Settings2 =
     let [<Literal>] internal topK = 5L
     let [<Literal>] internal contextSize = 32 
     let [<Literal>] internal learningRate = 0.001 
-    let [<Literal>] internal strategy = "greedy"  //"top-k" //"greedy"
+    
+    let internal strategy = Greedy  //"top-k" //"greedy"

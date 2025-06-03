@@ -24,7 +24,7 @@ open Settings2
 // - Giles Thomas, Giles' blog, Writing an LLM from scratch (https://www.gilesthomas.com).
 //*******************************************************************
 
-module Transformer_TorchSharp2 =
+module Transformer_TorchSharp2 =   
 
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) (device: torch.Device) : torch.Tensor =
 
@@ -171,7 +171,7 @@ module Transformer_TorchSharp2 =
 
     let rec private generateCPS (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) (steps: int) 
                                 (maxSteps: int) (acc: int64 list) (contextSize: int64) (temp: float32) (topK: int64) 
-                                (strategy: string) (cont: int64 list -> 'a) : 'a =
+                                (strategy: Strategy) (cont: int64 list -> 'a) : 'a =
 
         let trimInput (input: torch.Tensor) =
 
@@ -182,20 +182,20 @@ module Transformer_TorchSharp2 =
         let sampleLogits (logits: torch.Tensor) =
 
             match strategy with
-            | "top-k" 
+            | Top_k 
                 ->
                 let struct (probs, indices) = torch.topk(logits / temp, int (min topK (int64 vocabSize)), dim = 0)
                 let probs = softmax(probs, dim = 0L)
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
 
-            | "greedy"
+            | Greedy
                 ->
                 torch.argmax(logits, dim = 0).item<int64>()
 
-            | s 
+            | S 
                 ->
-                failwithf "Unsupported sampling strategy: %s" s
+                failwithf "Unsupported sampling strategy: %A" S
 
         match steps >= maxSteps with
         | true  -> 
