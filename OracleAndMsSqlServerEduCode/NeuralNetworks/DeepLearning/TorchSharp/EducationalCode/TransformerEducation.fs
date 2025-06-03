@@ -390,11 +390,14 @@ module Transformer_TorchSharpEducation =
             
             // Forward pass: Compute logits
             // - Uses learned W and b to transform embedding to logits
+            //Logits are the raw scores output by the final linear layer of a model, typically before applying a probability-normalizing function like softmax (for multi-class classification) or sigmoid (for binary classification)
             let adjustedLogit: torch.Tensor =
                 let trimmedInput = trimInput inputSeq contextSize  // Trim the input sequence to the model's context size to prevent exceeding the maximum sequence length
                 let logits: torch.Tensor = model.forward trimmedInput // Run the forward pass to get the model's predictions (logits) for the input sequence; shape: [batch=1, seqLen, vocabSize]
                 let lastLogit: torch.Tensor = logits.select(0, 0L).select(0, -1L) // Extract the logits for the last token in the sequence; shape: [vocabSize]
-                
+                //if the last layer is a linear transformation, the output for an input ( x ) is computed as z=Wx+bz = Wx + bz = Wx + b, where ( W ) is the weight matrix, ( b ) is the bias, and ( z ) is the vector of logits.
+                //The term "logits" originates from the logistic function (sigmoid), where the input to the sigmoid (softmax by analogy) is called the logit.
+                                
                 match steps with
                 | 0 -> lastLogit.index_fill_(0, torch.tensor([|7L|], device=lastLogit.device), System.Single.NegativeInfinity) // On the first step, set the logit for the <eos> token (ID 7) to negative infinity to prevent generating <eos> as the first token
                 | _ -> lastLogit // Use the logits as-is for subsequent steps

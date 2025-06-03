@@ -21,6 +21,7 @@ open Settings2
 // Acknowledgments:
 // - A lecture on creating an LLM with TorchSharp by Tomáš Herceg (https://www.youtube.com/watch?v=tW5RiP765hw&t=12s).
 // - Sebastian Raschka, "Build a Large Language Model (From Scratch)".
+// - Giles Thomas, Giles' blog, Writing an LLM from scratch (https://www.gilesthomas.com).
 //*******************************************************************
 
 module Transformer_TorchSharp2 =
@@ -169,8 +170,8 @@ module Transformer_TorchSharp2 =
             )                    
 
     let rec private generateCPS (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) (steps: int) 
-                        (maxSteps: int) (acc: int64 list) (contextSize: int64) (temp: float32) (topK: int64) (strategy: string)
-                        (cont: int64 list -> 'a) : 'a =
+                                (maxSteps: int) (acc: int64 list) (contextSize: int64) (temp: float32) (topK: int64) 
+                                (strategy: string) (cont: int64 list -> 'a) : 'a =
 
         let trimInput (input: torch.Tensor) =
 
@@ -315,5 +316,3 @@ module Transformer_TorchSharp2 =
         let main () = ...
         
         *)
-
-       
