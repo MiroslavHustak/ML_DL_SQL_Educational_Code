@@ -28,12 +28,12 @@ module Transformer_TorchSharp2 =
 
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) (device: torch.Device) : torch.Tensor =
 
-        let position = torch.arange(seqLen, dtype = torch.float32, device = device).unsqueeze(1)
-        let divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype = torch.float32, device = device) * (-Math.Log 10000.0 / float dModel))
+        use position = torch.arange(seqLen, dtype = torch.float32, device = device).unsqueeze(1)
+        use divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype = torch.float32, device = device) * (-Math.Log 10000.0 / float dModel))
         
-        let encodings = torch.zeros([|seqLen; dModel|], device = device)
-        encodings.index_copy_(1, torch.arange(0L, dModel, 2L, device = device), torch.sin(position * divTerm)) |> ignore
-        encodings.index_copy_(1, torch.arange(1L, dModel, 2L, device = device), torch.cos(position * divTerm)) |> ignore
+        let encodings = torch.zeros([|seqLen; dModel|], device = device)  //use is not possible here
+        encodings.index_copy_(1, torch.arange(0L, dModel, 2L, device = device), torch.sin(position * divTerm)) |> ignore<torch.Tensor>
+        encodings.index_copy_(1, torch.arange(1L, dModel, 2L, device = device), torch.cos(position * divTerm)) |> ignore<torch.Tensor>
         encodings
 
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
@@ -104,7 +104,7 @@ module Transformer_TorchSharp2 =
         inherit Module<torch.Tensor, torch.Tensor>("Transformer")
 
         let embedding = Embedding(vocabSize, dModel)
-        let posEnc = getPositionalEncodings 128L dModel device
+        let posEnc = getPositionalEncodings 128L dModel device  
         let dropout = Dropout(float dropoutRate)
 
         let decoderLayers =
@@ -121,13 +121,13 @@ module Transformer_TorchSharp2 =
 
         override _.forward x =
 
-            let emb = embedding.forward x
+            use emb = embedding.forward x
             let seqLen = x.shape.[1]
             use embWithPos = emb + posEnc.narrow(0L, 0L, seqLen)
             use embWithPosDropped = dropout.forward embWithPos
 
-            let decoderOut = Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithPosDropped decoderLayers
-            let normOut = norm.forward decoderOut
+            use decoderOut = Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithPosDropped decoderLayers
+            use normOut = norm.forward decoderOut
 
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)
 
@@ -185,7 +185,7 @@ module Transformer_TorchSharp2 =
             | Top_k 
                 ->
                 let struct (probs, indices) = torch.topk(logits / temp, int (min topK (int64 vocabSize)), dim = 0)
-                let probs = softmax(probs, dim = 0L)
+                use probs = softmax(probs, dim = 0L)
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
 
@@ -199,7 +199,7 @@ module Transformer_TorchSharp2 =
 
         match steps >= maxSteps with
         | true  -> 
-                List.rev >> cont <| acc
+                List.rev >> cont <| acc  //CPS applied
         | false ->
                 use _ = torch.no_grad()
                 use trimmedInput = trimInput inputSeq
@@ -210,7 +210,7 @@ module Transformer_TorchSharp2 =
 
                 match nextToken = eosTokenIdx || nextToken = padTokenIdx with
                 | true  ->
-                        List.rev >> cont <| nextToken :: acc
+                        List.rev >> cont <| nextToken :: acc  //CPS applied
                 | false ->
                         let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
                         generateCPS model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy cont
