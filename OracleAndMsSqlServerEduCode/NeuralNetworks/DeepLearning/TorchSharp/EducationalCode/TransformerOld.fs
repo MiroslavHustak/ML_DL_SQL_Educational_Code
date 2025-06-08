@@ -238,6 +238,41 @@ module Transformer_TorchSharp =
                 let probs = softmax(probs, dim = 0L)
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
+
+            | Top_p ->
+                // Apply temperature to logits
+                let scaledLogits: torch.Tensor = logits / temp
+                // Compute probabilities via softmax
+                use probs: torch.Tensor = softmax(scaledLogits, dim = 0L)
+                // Sort probabilities in descending order with corresponding indices
+                let struct (sortedProbs: torch.Tensor, sortedIndices: torch.Tensor) = torch.sort(probs, dim = 0L, descending = true)
+                // Compute cumulative sum of sorted probabilities
+                use cumulativeProbs: torch.Tensor = torch.cumsum(sortedProbs, dim = 0L)
+                // Create a boolean mask where cumulative probability exceeds p
+                let pTensor =
+                    match cumulativeProbs.dtype with
+                    | torch.ScalarType.Float32 ->
+                        torch.tensor(0.9f, dtype=torch.ScalarType.Float32, device=cumulativeProbs.device)
+                    | torch.ScalarType.Float64 ->
+                        torch.tensor(0.9, dtype=torch.ScalarType.Float64, device=cumulativeProbs.device)
+                    | _ ->
+                        failwithf "Unsupported dtype for cumulativeProbs: %A" cumulativeProbs.dtype
+                use mask: torch.Tensor = torch.gt(cumulativeProbs, pTensor)
+                // Get the first index to exclude (or use all if none exceed p)
+                use nonzero: torch.Tensor = torch.nonzero(mask)
+                let cutoff: int64 =
+                   match nonzero.shape.[0] with
+                   | 0L -> sortedProbs.shape.[0]  // Use all tokens
+                   | _  -> nonzero.[0].item<int64>()
+                // Slice to keep only tokens up to cutoff (nucleus)
+                use probsTopP: torch.Tensor = sortedProbs.narrow(0L, 0L, cutoff)
+                use indicesTopP: torch.Tensor = sortedIndices.narrow(0L, 0L, cutoff)
+                // Renormalize probabilities to sum to 1
+                use probsRenormalised: torch.Tensor = probsTopP / probsTopP.sum()
+                // Sample an index from the nucleus
+                let idx: int64 = torch.multinomial(probsRenormalised, 1).item<int64>()
+                // Map sampled index to original token ID
+                indicesTopP.[idx].item<int64>() 
             
             | Greedy
                 ->

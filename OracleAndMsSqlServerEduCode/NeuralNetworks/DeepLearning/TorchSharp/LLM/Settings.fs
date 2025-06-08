@@ -10,6 +10,7 @@ open type torch.nn.functional
 
 type Strategy = 
     | Top_k
+    | Top_p
     | Greedy
     | S
     
@@ -77,9 +78,19 @@ module Settings2 =
     let [<Literal>] internal nHeads = 4L   
     let [<Literal>] internal numLayers = 4 //number of transformer decoder layers
     let [<Literal>] internal dropoutRate = 0.01f
+   
+    let [<Literal>] internal learningRate = 0.001     
+
+    //INFERENCE SETTINGS
+    let [<Literal>] initialStep = 0
+    let [<Literal>] maxSteps = 64
+
+    let internal acc = []
+
     let [<Literal>] internal temp = 0.3f
     let [<Literal>] internal topK = 5L
     let [<Literal>] internal contextSize = 32 
-    let [<Literal>] internal learningRate = 0.001 
+
+    let [<Literal>] internal p = 0.9 //top-p threshold       
     
-    let internal strategy = Greedy  //"top-k" //"greedy"
+    let internal strategy = Top_p  // Top_k  // Top_p  // Greedy

@@ -169,7 +169,8 @@ module Transformer_TorchSharp2 =
                 output.Dispose()
             )                    
 
-    let rec private generateCPS (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) (steps: int) 
+    //Continuation passing style (collection functions do not work; tail-recursivity not possible to establish) 
+    let rec private generateSeq (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) (steps: int) 
                                 (maxSteps: int) (acc: int64 list) (contextSize: int64) (temp: float32) (topK: int64) 
                                 (strategy: Strategy) (cont: int64 list -> 'a) : 'a =
 
@@ -185,21 +186,70 @@ module Transformer_TorchSharp2 =
             | Top_k 
                 ->
                 let struct (probs, indices) = torch.topk(logits / temp, int (min topK (int64 vocabSize)), dim = 0)
+                use indices = indices
                 use probs = softmax(probs, dim = 0L)
                 let idx = torch.multinomial(probs, 1).item<int64>()
                 indices.[idx].item<int64>()
 
-            | Greedy
+            | Top_p
+                ->
+                use scaledLogits: torch.Tensor = logits / temp
+                use probs: torch.Tensor = softmax(scaledLogits, dim = 0L)
+                let struct (sortedProbs: torch.Tensor, sortedIndices: torch.Tensor) = torch.sort(probs, dim = 0L, descending = true)
+                use sortedProbs = sortedProbs
+                use cumulativeProbs: torch.Tensor = torch.cumsum(sortedProbs, dim = 0L)
+            
+                let pTensor = torch.tensor(float32 p, device = cumulativeProbs.device) //C++ always gives a warning about ignoring complex numbers when applying dtype
+                    (*
+                    match cumulativeProbs.dtype with
+                    | torch.ScalarType.Float32 -> torch.tensor(float32 p, dtype=torch.ScalarType.Float32, device = cumulativeProbs.device)
+                    | torch.ScalarType.Float64 -> torch.tensor(p, dtype=torch.ScalarType.Float64, device = cumulativeProbs.device)
+                    | _                        -> failwithf "Unsupported dtype for cumulativeProbs: %A" cumulativeProbs.dtype
+                    *)
+            
+                use mask: torch.Tensor = torch.gt(cumulativeProbs, pTensor)
+                use nonzero: torch.Tensor = torch.nonzero(mask)
+            
+                let cutoff: int64 =
+                    match nonzero.shape.[0] with
+                    | 0L -> sortedProbs.shape.[0]  // Use all tokens
+                    | _  -> nonzero.[0].item<int64>()
+
+                let cutoff = match cutoff with 0L -> sortedProbs.shape.[0] | _ -> cutoff
+                
+                use probsTopP = sortedProbs.narrow(0L, 0L, cutoff)
+                use indicesTopP = sortedIndices.narrow(0L, 0L, cutoff)
+                let probsTopPSum = probsTopP.sum().item<float32>()
+
+                let idx =
+                    match cutoff, probsTopPSum with
+                    | 0L, _
+                        -> 
+                        torch.multinomial(probs, 1).item<int64>()
+
+                    | _, 0.0f 
+
+                        ->
+                        torch.multinomial(probs, 1).item<int64>()
+
+                    | _, _ 
+                        ->
+                        use probsRenormalised = probsTopP / probsTopP.sum()
+                        torch.multinomial(probsRenormalised, 1).item<int64>()
+
+                indicesTopP.[idx].item<int64>() 
+                
+            | Greedy 
                 ->
                 torch.argmax(logits, dim = 0).item<int64>()
 
-            | S 
-                ->
+            | S ->
                 failwithf "Unsupported sampling strategy: %A" S
+            
 
         match steps >= maxSteps with
         | true  -> 
-                List.rev >> cont <| acc  //CPS applied
+                List.rev >> cont <| acc  //CPS applied // Stop recursion if the maximum number of steps is reached
         | false ->
                 use _ = torch.no_grad()
                 use trimmedInput = trimInput inputSeq
@@ -213,10 +263,11 @@ module Transformer_TorchSharp2 =
                         List.rev >> cont <| nextToken :: acc  //CPS applied
                 | false ->
                         let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
-                        generateCPS model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy cont
+                        generateSeq model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy cont
 
     let internal main () =
 
+        //HELPERS
         use scope = torch.NewDisposeScope()
 
         let device = 
@@ -226,21 +277,27 @@ module Transformer_TorchSharp2 =
         
         printfn "Using device: %A" <| (string device).ToUpper()
 
+        // DATASET SIMULATION
         let dataset = TextData2.getSequences()
+
+        // TOKENIZER
         let (inputData, targetData) = Tokenizer2.createInputTargetPairs dataset
         use input = torch.tensor(inputData, device = device)
         use target = torch.tensor(targetData, device = device)
 
+        // GRADIENT-BASED PARAMETER* OPTIMIZATION (PRE-TRAINING) 
+        // * weights, biases, potentially learned positional encodings, layer normalization parameters
         printfn "Starting pre-training..."
 
         use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device)).``to``(device)
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
-        model.train()
+        model.train() //Setting the model for the pre-training mode
         
         trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
+        // FINE-TUNING 
         printfn "Starting fine-tuning..."
         
         let (fineTuneInputData, fineTuneTargetData) = TextData2.getFineTuningCausalLMSequences ()
@@ -248,22 +305,25 @@ module Transformer_TorchSharp2 =
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
-        model.train()
+        model.train() //Setting the model for the fine-tuning mode
 
         trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
+        // INFERENCE
         printfn "Generating sequence after fine-tuning..."
                
-        let question = "What is the colour of the sky? <sep>"
-        let questionTokens = Tokenizer2.tokenize question |> Array.ofList
+        let promptContent = "What is the colour of the Sun? <sep>"
+        let promptTokens = Tokenizer2.tokenize promptContent |> List.toArray
 
         model.``to``("cpu") |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
-        model.eval()
 
-        use inputSeq = torch.tensor(questionTokens, device = torch.CPU).unsqueeze 0L
+        model.eval() //Configures model to evaluation mode for sequence generation 
+
+        use inputSeq = torch.tensor(promptTokens, device = torch.CPU).unsqueeze 0L
         
-        let generated = generateCPS model inputSeq 0 64 [] contextSize temp topK strategy id
-        
+        //Generating the output sequence       
+        let generated = generateSeq model inputSeq initialStep maxSteps acc contextSize temp topK strategy id
+                       
         printf "Generated sequence (token IDs): "
         generated |> List.iter (printf "%d ")
 
@@ -281,38 +341,7 @@ module Transformer_TorchSharp2 =
 
         printfn "\n"
 
+        // DISPOSAL SECTION
         model.Dispose()
-
-        torch.CurrentDisposeScope.DisposeEverything()
+        torch.CurrentDisposeScope.DisposeEverything() // see torch.NewDisposeScope() above
         System.GC.Collect()
-
-        (*
-        TODO:
-        
-        module NeuralNetworks.Transformer
-        
-        type TransformerConfig = {
-            VocabSize : int64
-            DModel : int64
-            NHeads : int64
-            NumLayers : int
-            DropoutRate : float32
-            Device : torch.Device
-        }
-        
-        type TrainingConfig = {
-            Epochs : int
-            LearningRate : float32
-            ...
-        }
-        
-        let createModel (cfg: TransformerConfig) : torch.nn.Module<_,_> = ...
-        
-        let train (model, data, cfg: TrainingConfig) = ...
-        
-        let generate (model, seed, steps, strat) = ...
-        
-        // main delegates to above
-        let main () = ...
-        
-        *)

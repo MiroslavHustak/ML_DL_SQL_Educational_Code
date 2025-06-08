@@ -361,18 +361,19 @@ module Transformer_TorchSharpEducation =
             match strategy with
             | "top-k" 
                 ->
-                // Select top-k logits and their indices
-                let struct (probs, indices) = torch.topk(logits / temp, int effectiveTopK, dim=0)
-                let probs = softmax(probs, dim=0L)
+                // Select top-k logits and their indices // existuje jeste Top-p sampling
+                let struct (probs, indices) = torch.topk(logits / temp, int effectiveTopK, dim=0) //temp is applied here
+                let probs = softmax(probs, dim=0L) //softargmax - converts a tuple of K real numbers into a probability distribution of K possible outcomes na dimenzi tenzoru 0
                 // Remark: Multinomial sampling converts top-k probabilities into a single token index, introducing controlled randomness in token selection.
 
-                //If probs = tensor([0.1, 0.7, 0.1, 0.1]), then idx will be 1 most of the time (because 0.7 probability), but it can also be 0, 2, or 3 occasionally.
-                let idx = torch.multinomial(probs, 1).item<int64>() //It randomly picks one category index from probs
+                //If probs = tensor([0.1, 0.7, 0.1, 0.1]) (sum = 1), then idx will be index 1 most of the time (because 0.7 probability), but it can also be 0, 2, or 3 occasionally because 10% is still not so small probability.
+                let idx = torch.multinomial(probs, 1).item<int64>() //It picks one category index from probs based on probability (so it is random to some extent)
                 indices.[idx].item<int64>()
             | "greedy" 
                 ->
                 // Select the token with the highest logit
-                torch.argmax(logits, dim=0).item<int64>()
+                torch.argmax(logits, dim=0).item<int64>()  
+                //arguments of the maxima //returns the parameter for which the function result is maximal, here it returns the index (as int64) where the logits tensor is maximized
             | _ 
                 ->
                 failwith $"Unsupported sampling strategy: {strategy}"
@@ -488,6 +489,8 @@ module Transformer_TorchSharpEducation =
         // Remark: Converts tokenized input data (indices) into a tensor for model processing.
         use target = torch.tensor(targetData, device = device) // [320, 3]
         // Remark: Converts tokenized target data (indices) into a tensor for training.
+
+        //parameters optimized via gradient-based methods are weights, biases, potentially learned positional encodings, and layer normalization parameters γ and β. These collectively form the parameter set θ, adjusted to minimize the loss function during pre-training
 
         printfn "Starting pre-training..."        
               
