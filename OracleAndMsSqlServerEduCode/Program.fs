@@ -133,17 +133,13 @@ module Program =
     
     printCurrentTime () 
 
+    NeuralNetworks.Transformer_TorchSharp4.main()
     NeuralNetworks.Transformer_TorchSharp2.main()
 
-    printCurrentTime ()
-    printfn "*************************************" 
-
-    printCurrentTime () 
-
-    NeuralNetworks.Transformer_TorchSharp.main()
+    //[1 .. 10] |> List.iter (fun _ -> NeuralNetworks.Transformer_TorchSharp4.main())
 
     printCurrentTime ()
-    printfn "*************************************" 
+   
     //NeuralNetworks.MLP_Churn_TorchSharp.run ()
     //printfn "*************************************" 
     //NeuralNetworks.MLP_Churn_Synapses.run ()

@@ -1,15 +1,19 @@
 ﻿namespace NeuralNetworks
 
 open System
+open System.Threading.Tasks
+
 open TorchSharp
 open TorchSharp.Modules
 
 open type torch.nn
 open type torch.nn.functional
 
-open Settings2
+open Settings
 
 //*******************************************************************
+// GPT-4 in architecture (not in scale) without calling external tools
+
 // This code is still under development and is intended for educational purposes only.
 // Submitting issues and pull requests is welcome.
 //
@@ -21,90 +25,145 @@ open Settings2
 // Acknowledgments:
 // - A lecture on creating an LLM with TorchSharp by Tomáš Herceg (https://www.youtube.com/watch?v=tW5RiP765hw&t=12s).
 // - Sebastian Raschka, "Build a Large Language Model (From Scratch)".
-// - Giles Thomas, Giles' blog, Writing an LLM from scratch (https://www.gilesthomas.com).
 //*******************************************************************
 
-module Transformer_TorchSharp2 =   
+module Transformer_TorchSharp4 =   
 
-    let private getPositionalEncodings (seqLen: int64) (dModel: int64) (device: torch.Device) : torch.Tensor =
+    let private applyRotary (q: torch.Tensor) (k: torch.Tensor) : torch.Tensor * torch.Tensor =
 
-        use position = torch.arange(seqLen, dtype = torch.float32, device = device).unsqueeze(1)
-        use divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype = torch.float32, device = device) * (-Math.Log 10000.0 / float dModel))
+        let lastDim = q.shape.[q.shape.Length - 1]
         
-        let encodings = torch.zeros([|seqLen; dModel|], device = device)  //use is not possible here
-        encodings.index_copy_(1, torch.arange(0L, dModel, 2L, device = device), torch.sin(position * divTerm)) |> ignore<torch.Tensor>
-        encodings.index_copy_(1, torch.arange(1L, dModel, 2L, device = device), torch.cos(position * divTerm)) |> ignore<torch.Tensor>
-        encodings
+        match lastDim % 2L <> 0L with true -> failwithf "The last dimension (%d) is not even, cannot apply rotary split." lastDim | false -> ()
+        
+        let dim = lastDim / 2L
+        
+        let theta = torch.pow(10000.0f, torch.arange(0L, dim, device=q.device, dtype=torch.float32) / float32 dim)
+        let seqLen = q.shape.[q.shape.Length - 2]
+        let positionIds = torch.arange(seqLen, device=q.device, dtype=torch.float32).unsqueeze(-1)
+        let freqs = positionIds / theta
+        let sin = torch.sin(freqs)
+        let cos = torch.cos(freqs)
+    
+        let reshapeForRotation (x: torch.Tensor) =
+
+            let split = x.split([|dim; dim|], -1L)
+            match split.Length <> 2 with
+            | true  -> failwithf "Split did not return two tensors. Split length: %d, dim: %A, x.shape: %A" split.Length dim x.shape
+            | false -> ()
+            
+            let a, b = split.[0], split.[1]
+            torch.cat([|(a * cos) - (b * sin); (a * sin) + (b * cos)|], dim = -1)
+    
+        reshapeForRotation q, reshapeForRotation k
+    
+    type private RMSNorm(normalizedShape: int64[], eps: float32) as self =
+
+        inherit Module<torch.Tensor, torch.Tensor>("RMSNorm")
+
+        let weight = torch.nn.Parameter(torch.ones(normalizedShape))
+        let eps = torch.tensor(eps)
+        do self.RegisterComponents()
+
+        override _.forward (x: torch.Tensor) =
+
+            let norm = x.pow(torch.tensor(2.0f)).mean([|-1L|], keepdim = true).add(eps).sqrt() 
+            x / norm * weight
 
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
 
-        let qkvProjection = Linear(dModel, dModel * 3L)
+        let headDim = dModel / nHeads
+        let kvHeads = nHeads / 4L |> max 1L
+        let qProjection = Linear(dModel, dModel)
+        let kProjection = Linear(dModel, kvHeads * headDim)
+        let vProjection = Linear(dModel, kvHeads * headDim)
         let outputProjection = Linear(dModel, dModel)
+
         let feedForward1 = Linear(dModel, dModel * 4L)
         let feedForward2 = Linear(dModel * 4L, dModel)
-        let layerNorm1 = LayerNorm [|dModel|]
-        let layerNorm2 = LayerNorm [|dModel|]
+        let layerNorm1 = new RMSNorm([|dModel|], 1e-5f)
+        let layerNorm2 = new RMSNorm([|dModel|], 1e-5f)
         let dropout = Dropout(float dropoutRate)
+        let residualScale = 1.0f / float32 (2 * numLayers) |> torch.tensor
 
         do self.RegisterComponents()
 
         override _.forward x =
 
+            let getAlibiBias (nHeads: int64) (seq: int64) (device: torch.Device) =
+
+                let slopes = torch.linspace(1.0, 0.0, int nHeads, dtype = torch.float32, device = device).unsqueeze(-1).unsqueeze(-1)
+                let bias = torch.arange(seq, device = device).unsqueeze(0).unsqueeze(0).float()
+                slopes * bias
+
             match x.shape with
             | [|batch; seq; dmodel|] 
                 when dmodel = dModel
-                ->
-                match dModel % nHeads <> 0L with
-                | true  -> failwithf "%s (%d) must be divisible by %s (%d)" (nameof dModel) dModel (nameof nHeads) nHeads
-                | false -> ()
+                    ->
+                    use normedInput = layerNorm1.forward x
 
-                let headDim = dModel / nHeads
-                let reshapedShape = [|batch; seq; 3L; nHeads; headDim|]
+                    let qTask = 
+                        Task.Run
+                            (fun _
+                                -> qProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; nHeads; headDim|]).transpose(1, 2)
+                            )
 
-                use normedInput1 = layerNorm1.forward x //applied before the attention block (qkvProjection.forward) — so pre-norm.
-                use qkv = qkvProjection.forward normedInput1
-                use qkvReshaped = qkv.view(reshapedShape)
+                    let kTask = 
+                        Task.Run
+                            (fun _
+                                -> kProjection.forward(normedInput).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
+                            )
 
-                use q = qkvReshaped.select(2, 0L).transpose(1, 2)
-                use k = qkvReshaped.select(2, 1L).transpose(1, 2)
-                use v = qkvReshaped.select(2, 2L).transpose(1, 2)
+                    let vTask = 
+                        Task.Run
+                            (fun _
+                                -> vProjection.forward(normedInput).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
+                            )
 
-                use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim)
-                use mask = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
-                use maskedScores = attentionScores.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
-                use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
+                    Task.WaitAll([| qTask :> Task; kTask :> Task; vTask :> Task |])
 
-                use contextVector =
-                    torch.matmul(attentionWeights, v)
-                    |> fun cv -> cv.transpose(1, 2)
-                    |> fun cv -> cv.contiguous()
-                    |> fun cv -> cv.view(batch, seq, dModel)
+                    use q = qTask.Result
+                    use k = kTask.Result
+                    use v = vTask.Result
 
-                use attnOutput = outputProjection.forward contextVector
-                use out1 = x + attnOutput
+                    let qRoPE, kRoPE = applyRotary q k
 
-                use normedInput2 = layerNorm2.forward out1 //applied before the feed-forward block (feedForward1.forward) — pre-norm.
-                use ff1 = feedForward1.forward normedInput2
-                use activated = gelu ff1
-                use ff2 = feedForward2.forward activated
-                use ffOutput = dropout.forward ff2
+                    use qRoPE = qRoPE
+                    use kRoPE = kRoPE
 
-                out1 + ffOutput
+                    use attentionScores: torch.Tensor = torch.matmul(qRoPE, kRoPE.transpose(-2, -1)) / sqrt(float headDim)
+                    use alibiBias = getAlibiBias nHeads seq attentionScores.device
+                    use attentionScoresWithBias: torch.Tensor = attentionScores + alibiBias
+                    use mask: torch.Tensor = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
+                    use maskedScores = attentionScoresWithBias.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
+                    use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
 
-                //Post-Norm is rarely used in modern architectures except for legacy reasons
+                    let attnTask = 
+                        Task.Run
+                            (fun _
+                                -> torch.matmul(attentionWeights, v).transpose(1, 2).contiguous().view(batch, seq, dModel) |> outputProjection.forward
+                            )
 
-            | shapeArr 
-                ->
-                failwithf "Input tensor must have shape [batch; seq; %s] but got %A" (nameof dModel) shapeArr
+                    let ffnTask = 
+                        Task.Run
+                            (fun _
+                                -> normedInput |> layerNorm2.forward |> feedForward1.forward |> gelu |> feedForward2.forward |> dropout.forward
+                            )
+
+                    Task.WaitAll([| attnTask :> Task; ffnTask :> Task |])
+
+                    let out1 = x + attnTask.Result * residualScale
+
+                    out1 + ffnTask.Result * residualScale
+
+            | shapeArr -> failwithf "Invalid input shape: %A" shapeArr
 
     type private Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int, device: torch.Device) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("Transformer")
 
         let embedding = Embedding(vocabSize, dModel)
-        let posEnc = getPositionalEncodings 128L dModel device  
         let dropout = Dropout(float dropoutRate)
 
         let decoderLayers =
@@ -113,23 +172,20 @@ module Transformer_TorchSharp2 =
             |> ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>
 
         let outputLayer = Linear(dModel, vocabSize)
-        let norm = LayerNorm [|dModel|]
+        let norm = new RMSNorm([|dModel|], 1e-5f)
 
         do outputLayer.weight <- embedding.weight
-        do self.register_buffer("posEnc", posEnc)
         do self.RegisterComponents()
 
         override _.forward x =
 
             use emb = embedding.forward x
-            let seqLen = x.shape.[1]
-            use embWithPos = emb + posEnc.narrow(0L, 0L, seqLen)
-            use embWithPosDropped = dropout.forward embWithPos
-
+            use embWithPosDropped = dropout.forward emb
             use decoderOut = Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithPosDropped decoderLayers
             use normOut = norm.forward decoderOut
 
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)
+
 
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
                            (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
@@ -336,7 +392,7 @@ module Transformer_TorchSharp2 =
                 ->
                 match id >= 0L && id < int64 vocabulary.Length with
                 | true  -> printf "%s " (vocabulary |> List.item (int id))
-                | false -> printf "<UNK> "
+                | false -> printf "<unk> "
             )
 
         printfn "\n"

@@ -68,7 +68,7 @@ module Tokenizer =
                 match idx with
                 | _ when idx >= 0L && idx < int64 Settings.vocabulary.Length
                     -> Settings.vocabulary.[int idx]
-                | _ -> "<UNK>"
+                | _ -> "<unk>"
             ) //common placeholder token used in Natural Language Processing (NLP) meaning "unknown".
 
 module Tokenizer2 =
@@ -76,7 +76,7 @@ module Tokenizer2 =
     open System.Text.RegularExpressions
        
     let internal wordToIndex =
-        Settings2.vocabulary
+        Settings.vocabulary
         |> Seq.mapi (fun i word -> (word, int64 i))
         |> Map.ofSeq
 
@@ -137,8 +137,8 @@ module Tokenizer2 =
         |> List.map
             (fun idx
                 ->
-                match idx >= 0L && idx < int64 Settings2.vocabulary.Length with
-                | true  -> Settings2.vocabulary |> List.item (int idx)
+                match idx >= 0L && idx < int64 Settings.vocabulary.Length with
+                | true  -> Settings.vocabulary |> List.item (int idx)
                 | false -> "<UNK>"
             )
 
