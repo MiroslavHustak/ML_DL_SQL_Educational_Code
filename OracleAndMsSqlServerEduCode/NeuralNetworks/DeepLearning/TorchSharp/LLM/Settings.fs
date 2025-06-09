@@ -63,10 +63,19 @@ module Settings =
 
     let internal acc = []
 
-    let [<Literal>] internal temp = 0.3f
+    //let [<Literal>] internal temp = 0.3f  //hight accuracy
+    let [<Literal>] internal temp = 0.7f //common default, gives more creative, diverse, and less predictable responses.
     let [<Literal>] internal topK = 5L
     let [<Literal>] internal contextSize = 32 
 
-    let [<Literal>] internal p = 0.9 //top-p threshold       
+    let [<Literal>] internal p = 0.8 //top-p (nucleus sampling) probability threshold 
+    (*
+    | p value | Behavior       | Diversity | Determinism |
+    |---------|----------------|-----------|-------------|
+    | 0.7     | Focused        | Low       | High        |
+    | 0.8     | Balanced       | Medium    | Medium      |
+    | 0.9     | Diverse        | High      | Lower       |
+    | 1.0     | Pure random    | Highest   | Lowest      |
+    *) 
     
     let internal strategy = Top_p  // Top_k  // Top_p  // Greedy

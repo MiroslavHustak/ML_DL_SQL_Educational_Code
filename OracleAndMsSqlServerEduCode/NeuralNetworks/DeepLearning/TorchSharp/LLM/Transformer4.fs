@@ -27,8 +27,15 @@ open Settings
 // - Sebastian Raschka, "Build a Large Language Model (From Scratch)".
 //*******************************************************************
 
-module Transformer_TorchSharp4 =   
+module Transformer_TorchSharp4 =  
 
+    //*************************************************************  
+    // MODEL ARCHITECTURE DEFINITION SECTION
+    // GPT-4-like architecture (decoder-only Transformer with RoPE and RMSNorm)
+    // Does not include FlashAttention, fused ops, production-grade tokenizer, checkpointing, LoRA, or quantisation
+    //*************************************************************
+    
+    //Rotary Positional Embeddings
     let private applyRotary (q: torch.Tensor) (k: torch.Tensor) : torch.Tensor * torch.Tensor =
 
         let lastDim = q.shape.[q.shape.Length - 1]
@@ -84,8 +91,7 @@ module Transformer_TorchSharp4 =
         let feedForward2 = Linear(dModel * 4L, dModel)
         let layerNorm1 = new RMSNorm([|dModel|], 1e-5f)
         let layerNorm2 = new RMSNorm([|dModel|], 1e-5f)
-        let dropout = Dropout(float dropoutRate)
-        let residualScale = 1.0f / float32 (2 * numLayers) |> torch.tensor
+        let dropout = Dropout(float dropoutRate)      
 
         do self.RegisterComponents()
 
@@ -135,6 +141,8 @@ module Transformer_TorchSharp4 =
                     use attentionScores: torch.Tensor = torch.matmul(qRoPE, kRoPE.transpose(-2, -1)) / sqrt(float headDim)
                     use alibiBias = getAlibiBias nHeads seq attentionScores.device
                     use attentionScoresWithBias: torch.Tensor = attentionScores + alibiBias
+
+                    //preventing tokens from attending to future ones
                     use mask: torch.Tensor = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
                     use maskedScores = attentionScoresWithBias.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
                     use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
@@ -153,9 +161,15 @@ module Transformer_TorchSharp4 =
 
                     Task.WaitAll([| attnTask :> Task; ffnTask :> Task |])
 
-                    let out1 = x + attnTask.Result * residualScale
+                    use attnResult = attnTask.Result
+                    use ffnResult = ffnTask.Result
 
-                    out1 + ffnTask.Result * residualScale
+                    //Skip (residual) connections with scaling - prevent exploding activations in very deep networks (not used in my GPT-2-like model)
+                    use residualScale = 1.0f / float32 (2 * numLayers) |> torch.tensor
+
+                    use out1 = x + attnTask.Result * residualScale //The first skip (residual) connection after multi-head attention
+
+                    out1 + ffnTask.Result * residualScale //The second residual connection after feed-forward network
 
             | shapeArr -> failwithf "Invalid input shape: %A" shapeArr
 
@@ -184,8 +198,15 @@ module Transformer_TorchSharp4 =
             use decoderOut = Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithPosDropped decoderLayers
             use normOut = norm.forward decoderOut
 
-            outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)
+            outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)    
+   
+    //*************************************************************   
+    // For mathematicians:
+    // PARAMETER ESTIMATION AND GRADIENT-BASED OPTIMISATION SECTION
 
+    // For others:
+    // MODEL TRAINING SECTION (USED FOR PRE-TRAINING AND FINE-TUNING)
+    //*************************************************************
 
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
                            (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
@@ -196,16 +217,16 @@ module Transformer_TorchSharp4 =
                 ->
                 let counter = epoch + 1
 
-                optimizer.zero_grad()
+                optimizer.zero_grad() // Clears old gradients from the previous step before the next backward pass 
 
                 let output = model.forward input
-                let loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), target.contiguous().view(-1L))
+                let loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), target.contiguous().view(-1L)) //computes gradients
 
                 let perplexity = torch.exp(loss).item<float32>() 
 
                 try
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float>
+                    loss.backward() //computes loss
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> // limits the combined size (norm) of all parameter gradients to 1.0
                 with
                 | :? System.StackOverflowException 
                     as ex 
@@ -215,7 +236,7 @@ module Transformer_TorchSharp4 =
                     ->
                     printfn "%s" (string ex.Message)
 
-                optimizer.step() |> ignore                
+                optimizer.step() |> ignore<torch.Tensor>   //update parameters based on gradients (Adam is actually run here)            
         
                 match counter % 20 with
                 | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
@@ -225,10 +246,13 @@ module Transformer_TorchSharp4 =
                 output.Dispose()
             )                    
 
+    //*************************************************************         
+    // INFERENCE SECTION
+    //*************************************************************    
+
     //Continuation passing style (collection functions do not work; tail-recursivity not possible to establish) 
     let rec private generateSeq (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) (steps: int) 
-                                (maxSteps: int) (acc: int64 list) (contextSize: int64) (temp: float32) (topK: int64) 
-                                (strategy: Strategy) (cont: int64 list -> 'a) : 'a =
+                                (acc: int64 list) (cont: int64 list -> 'a) : 'a =
 
         let trimInput (input: torch.Tensor) =
 
@@ -300,8 +324,7 @@ module Transformer_TorchSharp4 =
                 torch.argmax(logits, dim = 0).item<int64>()
 
             | S ->
-                failwithf "Unsupported sampling strategy: %A" S
-            
+                failwith "Unsupported sampling strategy"
 
         match steps >= maxSteps with
         | true  -> 
@@ -319,7 +342,7 @@ module Transformer_TorchSharp4 =
                         List.rev >> cont <| nextToken :: acc  //CPS applied
                 | false ->
                         let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
-                        generateSeq model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy cont
+                        generateSeq model newInput (steps + 1) (nextToken :: acc) cont
 
     let internal main () =
 
@@ -347,11 +370,11 @@ module Transformer_TorchSharp4 =
 
         use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device)).``to``(device)
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
-        use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
+        use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm //just configuration
         
-        model.train() //Setting the model for the pre-training mode
+        //model.train() //Setting the model for the pre-training mode
         
-        trainEpoch model optimizer lossFn input target epochs "Pre-training"
+        //trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
         // FINE-TUNING 
         printfn "Starting fine-tuning..."
@@ -361,9 +384,12 @@ module Transformer_TorchSharp4 =
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
-        model.train() //Setting the model for the fine-tuning mode
+        //model.train() //Setting the model for the fine-tuning mode
 
-        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+        //trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+
+        //model.save("model4.pt") |> ignore<torch.nn.Module>
+        model.load("model4.pt") |> ignore<torch.nn.Module>
 
         // INFERENCE
         printfn "Generating sequence after fine-tuning..."
@@ -378,7 +404,7 @@ module Transformer_TorchSharp4 =
         use inputSeq = torch.tensor(promptTokens, device = torch.CPU).unsqueeze 0L
         
         //Generating the output sequence       
-        let generated = generateSeq model inputSeq initialStep maxSteps acc contextSize temp topK strategy id
+        let generated = generateSeq model inputSeq initialStep acc id
                        
         printf "Generated sequence (token IDs): "
         generated |> List.iter (printf "%d ")
@@ -386,6 +412,7 @@ module Transformer_TorchSharp4 =
         printfn "\n"
         
         printf "Generated sequence (words): "
+      
         generated 
         |> List.iter
             (fun id 
@@ -396,8 +423,10 @@ module Transformer_TorchSharp4 =
             )
 
         printfn "\n"
-
+               
+        //*************************************************************         
         // DISPOSAL SECTION
+        //*************************************************************
         model.Dispose()
         torch.CurrentDisposeScope.DisposeEverything() // see torch.NewDisposeScope() above
         System.GC.Collect()

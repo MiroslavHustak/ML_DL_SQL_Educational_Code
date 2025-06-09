@@ -136,7 +136,15 @@ module Program =
     NeuralNetworks.Transformer_TorchSharp4.main()
     NeuralNetworks.Transformer_TorchSharp2.main()
 
-    //[1 .. 10] |> List.iter (fun _ -> NeuralNetworks.Transformer_TorchSharp4.main())
+    (*
+    [1 .. 1000]
+    |> List.iter
+        (fun _
+            ->
+            NeuralNetworks.Transformer_TorchSharp4.main()
+            NeuralNetworks.Transformer_TorchSharp2.main()
+        )
+    *)
 
     printCurrentTime ()
    

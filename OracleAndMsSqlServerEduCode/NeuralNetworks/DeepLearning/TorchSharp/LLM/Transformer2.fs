@@ -30,6 +30,12 @@ open Settings
 
 module Transformer_TorchSharp2 =   
 
+    //*************************************************************  
+    // MODEL ARCHITECTURE DEFINITION SECTION
+    // GPT-2-like architecture (decoder-only Transformer)
+    // Does not include production-grade tokenizer
+    //*************************************************************
+
     let private getPositionalEncodings (seqLen: int64) (dModel: int64) (device: torch.Device) : torch.Tensor =
 
         use position = torch.arange(seqLen, dtype = torch.float32, device = device).unsqueeze(1)
@@ -67,7 +73,7 @@ module Transformer_TorchSharp2 =
                 let headDim = dModel / nHeads
                 let reshapedShape = [|batch; seq; 3L; nHeads; headDim|]
 
-                use normedInput1 = layerNorm1.forward x //applied before the attention block (qkvProjection.forward) — so pre-norm.
+                use normedInput1 = layerNorm1.forward x //applied before the attention block (qkvProjection.forward) => pre-norm.
                 use qkv = qkvProjection.forward normedInput1
                 use qkvReshaped = qkv.view(reshapedShape)
 
@@ -95,17 +101,18 @@ module Transformer_TorchSharp2 =
                     |> fun cv -> cv.transpose(1, 2)
                     |> fun cv -> cv.contiguous()
                     |> fun cv -> cv.view(batch, seq, dModel)
-
+                 
+                //two skip (residual) connections per decoder layer — one for attention, one for feed-forward  
                 use attnOutput = outputProjection.forward contextVector
-                use out1 = x + attnOutput
+                use out1 = x + attnOutput //Skip (residual) connection 1
 
-                use normedInput2 = layerNorm2.forward out1 //applied before the feed-forward block (feedForward1.forward) — pre-norm.
+                use normedInput2 = layerNorm2.forward out1 //applied before the feed-forward block (feedForward1.forward) => pre-norm.
                 use ff1 = feedForward1.forward normedInput2
                 use activated = gelu ff1
                 use ff2 = feedForward2.forward activated
                 use ffOutput = dropout.forward ff2
 
-                out1 + ffOutput
+                out1 + ffOutput //Skip (residual) connection 2
 
                 //Post-Norm is rarely used in modern architectures except for legacy reasons
 
@@ -145,6 +152,14 @@ module Transformer_TorchSharp2 =
 
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)
 
+    //*************************************************************   
+    // For mathematicians:
+    // PARAMETER ESTIMATION AND GRADIENT-BASED OPTIMISATION SECTION
+
+    // For others:
+    // MODEL TRAINING SECTION (USED FOR PRE-TRAINING AND FINE-TUNING)
+    //*************************************************************
+
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
                            (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
 
@@ -154,7 +169,7 @@ module Transformer_TorchSharp2 =
                 ->
                 let counter = epoch + 1
 
-                optimizer.zero_grad()
+                optimizer.zero_grad() // Clears old gradients from the previous step before the next backward pass                
 
                 let output = model.forward input
                 let loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), target.contiguous().view(-1L))
@@ -163,7 +178,7 @@ module Transformer_TorchSharp2 =
 
                 try
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float>
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> // limits the combined size (norm) of all parameter gradients to 1.0
                 with
                 | :? System.StackOverflowException 
                     as ex 
@@ -173,7 +188,7 @@ module Transformer_TorchSharp2 =
                     ->
                     printfn "%s" (string ex.Message)
 
-                optimizer.step() |> ignore                
+                optimizer.step() |> ignore<torch.Tensor>    //update parameters based on gradients (Adam is actually run here)          
         
                 match counter % 20 with
                 | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
@@ -181,12 +196,15 @@ module Transformer_TorchSharp2 =
 
                 loss.Dispose()
                 output.Dispose()
-            )                    
+            )        
+            
+    //*************************************************************         
+    // INFERENCE SECTION
+    //*************************************************************    
 
     //Continuation passing style (collection functions do not work; tail-recursivity not possible to establish) 
     let rec private generateSeq (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (inputSeq: torch.Tensor) (steps: int) 
-                                (maxSteps: int) (acc: int64 list) (contextSize: int64) (temp: float32) (topK: int64) 
-                                (strategy: Strategy) (cont: int64 list -> 'a) : 'a =
+                                (acc: int64 list) (cont: int64 list -> 'a) : 'a =
 
         let trimInput (input: torch.Tensor) =
 
@@ -258,8 +276,7 @@ module Transformer_TorchSharp2 =
                 torch.argmax(logits, dim = 0).item<int64>()
 
             | S ->
-                failwithf "Unsupported sampling strategy: %A" S
-            
+                failwith "Unsupported sampling strategy"            
 
         match steps >= maxSteps with
         | true  -> 
@@ -277,7 +294,7 @@ module Transformer_TorchSharp2 =
                         List.rev >> cont <| nextToken :: acc  //CPS applied
                 | false ->
                         let newInput = torch.cat([|inputSeq; torch.tensor([|nextToken|], device = inputSeq.device).unsqueeze(0L)|], dim = 1L)
-                        generateSeq model newInput (steps + 1) maxSteps (nextToken :: acc) contextSize temp topK strategy cont
+                        generateSeq model newInput (steps + 1) (nextToken :: acc) cont
 
     let internal main () =
 
@@ -307,9 +324,9 @@ module Transformer_TorchSharp2 =
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
-        model.train() //Setting the model for the pre-training mode
+        //model.train() //Setting the model for the pre-training mode
         
-        trainEpoch model optimizer lossFn input target epochs "Pre-training"
+        //trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
         // FINE-TUNING 
         printfn "Starting fine-tuning..."
@@ -319,9 +336,12 @@ module Transformer_TorchSharp2 =
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
-        model.train() //Setting the model for the fine-tuning mode
+        //model.train() //Setting the model for the fine-tuning mode
 
-        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+        //trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+
+        //model.save("model2.pt") |> ignore<torch.nn.Module>
+        model.load("model2.pt") |> ignore<torch.nn.Module>
 
         // INFERENCE
         printfn "Generating sequence after fine-tuning..."
@@ -336,7 +356,7 @@ module Transformer_TorchSharp2 =
         use inputSeq = torch.tensor(promptTokens, device = torch.CPU).unsqueeze 0L
         
         //Generating the output sequence       
-        let generated = generateSeq model inputSeq initialStep maxSteps acc contextSize temp topK strategy id
+        let generated = generateSeq model inputSeq initialStep acc id
                        
         printf "Generated sequence (token IDs): "
         generated |> List.iter (printf "%d ")
@@ -350,7 +370,7 @@ module Transformer_TorchSharp2 =
                 ->
                 match id >= 0L && id < int64 vocabulary.Length with
                 | true  -> printf "%s " (vocabulary |> List.item (int id))
-                | false -> printf "<UNK> "
+                | false -> printf "<unk> "
             )
 
         printfn "\n"

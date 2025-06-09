@@ -286,6 +286,7 @@ module Transformer_TorchSharpEducation =
                 // - Uses W and b from outputLayer, learned from previous epochs
                 use output = model.forward input
                 // Compute loss: Compare logits to target tokens
+                //You must compute the loss first, because without the loss tensor, backward() has nothing to differentiate.
                 use loss = lossFn.forward(output.view(-1L, vocabSize), target.view(-1L))
                 
                 (*
@@ -308,7 +309,7 @@ module Transformer_TorchSharpEducation =
                     //These connections speed up and stabilize backpropagation by allowing gradients to flow more directly through the network, addressing issues like vanishing or exploding gradients. 
                     // Backward pass: Compute gradients for W, b, and embedding weights
                     loss.backward() //meni model // //This triggers backpropagation, computing gradients through the entire model, including the residual connections.
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) |> ignore // limits the combined size (norm) of all parameter gradients to 1.0, preventing exploding gradients
                 with
                 | :? System.StackOverflowException as ex
                     ->
@@ -346,6 +347,13 @@ module Transformer_TorchSharpEducation =
             | true  -> input.narrow(1, -contextSize, contextSize) // Keep only the last contextSize tokens
             | false -> input
         // Remark: Ensures the input sequence does not exceed the model's context size, preventing memory issues and compatibility with positional encodings.
+        (*
+        The trimInput function ensures that the input sequence passed to your model does not exceed the model's context window size (contextSize).
+        Most transformer models (like GPT, LLMs, etc.) have a fixed context window—for example, 1024 or 2048 tokens.
+        If you give the model more tokens than it was trained to handle, it will either fail, raise an error, or simply ignore the extra tokens.
+        During sequence generation, your input can grow (as you append predicted tokens).
+        To avoid errors and keep only the most recent context, you "trim" the input.
+        *)
 
         // Helper function to sample the next token from logits
         // Viz také přednáška od Tomáše Hercega
@@ -362,7 +370,7 @@ module Transformer_TorchSharpEducation =
             | "top-k" 
                 ->
                 // Select top-k logits and their indices // existuje jeste Top-p sampling
-                let struct (probs, indices) = torch.topk(logits / temp, int effectiveTopK, dim=0) //temp is applied here
+                let struct (probs, indices) = torch.topk(logits / temp, int effectiveTopK, dim=0) //temp is applied here //controls the randomness of the model's output. Lower temperatures lead to more predictable, deterministic outputs, while higher temperatures encourage more diverse, creative, and sometimes random results. 
                 let probs = softmax(probs, dim=0L) //softargmax - converts a tuple of K real numbers into a probability distribution of K possible outcomes na dimenzi tenzoru 0
                 // Remark: Multinomial sampling converts top-k probabilities into a single token index, introducing controlled randomness in token selection.
 
@@ -498,7 +506,7 @@ module Transformer_TorchSharpEducation =
 
         use lossFn = new CrossEntropyLoss() //viz přednáška Tomáše Hercega
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam is the optimizer that updates the model’s parameters (weights) to minimize the loss computed by CrossEntropyLoss
-        //Adam (Adaptive Moment Estimation)       
+        //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm       
 
         model.train()
 
