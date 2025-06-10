@@ -109,7 +109,7 @@ module Transformer_TorchSharp4 =
                     ->
                     use normedInput = layerNorm1.forward x
                               
-                    //async workflows as fast as tasks for this use case          
+                    //async workflows as fast as tasks for large CPU-bound tensor operations  
                     let result = 
                         [
                             qProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; nHeads; headDim|]).transpose(1, 2)
@@ -163,7 +163,7 @@ module Transformer_TorchSharp4 =
                     use maskedScores = attentionScoresWithBias.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
                     use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
                        
-                    //async workflows as fast as tasks for this use case   
+                    //async workflows as fast as tasks for large CPU-bound tensor operations    
                     let result = 
                         [
                             torch.matmul(attentionWeights, v).transpose(1, 2).contiguous().view(batch, seq, dModel) |> outputProjection.forward
@@ -241,11 +241,43 @@ module Transformer_TorchSharp4 =
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
                            (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
 
+        //Learning rate ccheduler (includes warmup and cosine decay)  
+        let learningRateSchedule (warmupSteps: int) (totalSteps: int) (baseLr: float32) (step: int) : float32 =
+
+            match step with
+            | s when
+                s < warmupSteps
+                    ->
+                    float32 s / float32 warmupSteps * baseLr
+            | s when
+                s < totalSteps
+                    ->
+                    let progress = float32 (s - warmupSteps) / float32 (totalSteps - warmupSteps)
+                    baseLr * 0.5f * (1.0f + cos (MathF.PI * progress))
+            | _ 
+                    ->
+                    0.0f       
+
         [0 .. maxEpochs - 1]
         |> List.iter
             (fun epoch 
                 ->
                 let counter = (+) epoch 1
+
+                let baseLr = 5e-4f //5 * 10^-4  //adapt
+                let warmupSteps = 10  //adapt
+
+                // Set learning rate dynamically based on schedule
+                let currentLr : float32 = learningRateSchedule warmupSteps maxEpochs baseLr epoch
+
+                let paramGroups = optimizer.ParamGroups
+                match paramGroups |> Seq.length > 0 with
+                | true  ->
+                        let paramGroup = paramGroups |> Seq.head 
+                        //paramGroup.LearningRate <- float currentLr  //uncomment and use with a better PC than I possess
+                        () //comment out if you use a better PC than me
+                | false ->
+                        failwith "No parameter groups found in optimizer"
 
                 optimizer.zero_grad() // Clears old gradients from the previous step before the next backward pass 
 
@@ -256,7 +288,7 @@ module Transformer_TorchSharp4 =
 
                 try
                     loss.backward() //computes loss
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> // limits the combined size (norm) of all parameter gradients to 1.0
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> //Gradient clipping limits the combined size (norm) of all parameter gradients to 1.0
                 with
                 | :? System.StackOverflowException 
                     as ex 
@@ -401,10 +433,10 @@ module Transformer_TorchSharp4 =
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm //just configuration
         
         //Uncomment for pre-training
-        model.train() //Setting the model for the pre-training mode
+        //model.train() //Setting the model for the pre-training mode
         
         //Uncomment for pre-training
-        trainEpoch model optimizer lossFn input target epochs "Pre-training"
+        //trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
         // FINE-TUNING 
         printfn "Starting fine-tuning..."
@@ -415,13 +447,13 @@ module Transformer_TorchSharp4 =
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
 
         //Uncomment for fine-tuning
-        model.train() //Setting the model for the fine-tuning mode
+        //model.train() //Setting the model for the fine-tuning mode
 
         //Uncomment for fine-tuning
-        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+        //trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
         //Uncomment for saving weights and biases
-        model.save("model4.pt") |> ignore<torch.nn.Module>
+        //model.save("model4.pt") |> ignore<torch.nn.Module>
         model.load("model4.pt") |> ignore<torch.nn.Module>
 
         // INFERENCE
