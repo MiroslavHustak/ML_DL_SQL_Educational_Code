@@ -34,35 +34,7 @@ module Transformer_TorchSharp4 =
     // GPT-4-like architecture (decoder-only Transformer with RoPE and RMSNorm)
     // Does not include FlashAttention, fused ops, production-grade tokenizer, checkpointing, LoRA, or quantisation
     //*************************************************************
-    
-    //Rotary Positional Embeddings
-    let private applyRotary (q: torch.Tensor) (k: torch.Tensor) : torch.Tensor * torch.Tensor =
-
-        let lastDim = q.shape.[q.shape.Length - 1]
         
-        match lastDim % 2L <> 0L with true -> failwithf "The last dimension (%d) is not even, cannot apply rotary split." lastDim | false -> ()
-        
-        let dim = lastDim / 2L
-        
-        let theta = torch.pow(10000.0f, torch.arange(0L, dim, device=q.device, dtype=torch.float32) / float32 dim)
-        let seqLen = q.shape.[q.shape.Length - 2]
-        let positionIds = torch.arange(seqLen, device=q.device, dtype=torch.float32).unsqueeze(-1)
-        let freqs = positionIds / theta
-        let sin = torch.sin(freqs)
-        let cos = torch.cos(freqs)
-    
-        let reshapeForRotation (x: torch.Tensor) =
-
-            let split = x.split([|dim; dim|], -1L)
-            match split.Length <> 2 with
-            | true  -> failwithf "Split did not return two tensors. Split length: %d, dim: %A, x.shape: %A" split.Length dim x.shape
-            | false -> ()
-            
-            let a, b = split.[0], split.[1]
-            torch.cat([|(a * cos) - (b * sin); (a * sin) + (b * cos)|], dim = -1)
-    
-        reshapeForRotation q, reshapeForRotation k
-    
     type private RMSNorm(normalizedShape: int64[], eps: float32) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("RMSNorm")
@@ -78,7 +50,7 @@ module Transformer_TorchSharp4 =
 
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
 
-        inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
+        inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")       
 
         let headDim = dModel / nHeads
         let kvHeads = nHeads / 4L |> max 1L
@@ -97,18 +69,60 @@ module Transformer_TorchSharp4 =
 
         override _.forward x =
 
-            let getAlibiBias (nHeads: int64) (seq: int64) (device: torch.Device) =
+            //Rotary Positional Embeddings
+            let applyRotary (q: torch.Tensor) (k: torch.Tensor) : torch.Tensor * torch.Tensor =
+
+                let lastDim = q.shape.[q.shape.Length - 1]
+            
+                match lastDim % 2L <> 0L with true -> failwithf "The last dimension (%d) is not even, cannot apply rotary split." lastDim | false -> ()
+            
+                let dim = lastDim / 2L
+            
+                let theta = torch.pow(10000.0f, torch.arange(0L, dim, device=q.device, dtype=torch.float32) / float32 dim)
+                let seqLen = q.shape.[q.shape.Length - 2]
+                let positionIds = torch.arange(seqLen, device=q.device, dtype=torch.float32).unsqueeze(-1)
+                let freqs = positionIds / theta
+                let sin = torch.sin(freqs)
+                let cos = torch.cos(freqs)
+    
+                let reshapeForRotation (x: torch.Tensor) =
+
+                    let split = x.split([|dim; dim|], -1L)
+                    match split.Length <> 2 with
+                    | true  -> failwithf "Split did not return two tensors. Split length: %d, dim: %A, x.shape: %A" split.Length dim x.shape
+                    | false -> ()
+                
+                    let a, b = split |> Array.head, split |> Array.last
+                    torch.cat([|(a * cos) - (b * sin); (a * sin) + (b * cos)|], dim = -1)
+    
+                reshapeForRotation q, reshapeForRotation k 
+
+            let getAlibiBias (nHeads: int64) (seq: int64) (device: torch.Device) = //Attention with linear biases
 
                 let slopes = torch.linspace(1.0, 0.0, int nHeads, dtype = torch.float32, device = device).unsqueeze(-1).unsqueeze(-1)
                 let bias = torch.arange(seq, device = device).unsqueeze(0).unsqueeze(0).float()
-                slopes * bias
+                (*) slopes bias
 
             match x.shape with
             | [|batch; seq; dmodel|] 
                 when dmodel = dModel
                     ->
                     use normedInput = layerNorm1.forward x
+                              
+                    //async workflows as fast as tasks for this use case          
+                    let result = 
+                        [
+                            qProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; nHeads; headDim|]).transpose(1, 2)
+                            kProjection.forward(normedInput).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
+                            vProjection.forward(normedInput).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
+                        ]
+                        |> List.Parallel.map id
 
+                    use q = result |> List.head
+                    use k = result |> List.item 1
+                    use v = result |> List.last 
+                    
+                    (*
                     let qTask = 
                         Task.Run
                             (fun _
@@ -131,22 +145,36 @@ module Transformer_TorchSharp4 =
 
                     use q = qTask.Result
                     use k = kTask.Result
-                    use v = vTask.Result
+                    use v = vTask.Result                   
+                    *)
 
                     let qRoPE, kRoPE = applyRotary q k
 
                     use qRoPE = qRoPE
                     use kRoPE = kRoPE
 
-                    use attentionScores: torch.Tensor = torch.matmul(qRoPE, kRoPE.transpose(-2, -1)) / sqrt(float headDim)
+                    //positional information is integrated directly into the attention mechanism via RoPE (for q and k) and ALiBi (for attention scores)                    
+                    use attentionScores : torch.Tensor = torch.matmul(qRoPE, kRoPE.transpose(-2, -1)) / sqrt(float headDim)
                     use alibiBias = getAlibiBias nHeads seq attentionScores.device
-                    use attentionScoresWithBias: torch.Tensor = attentionScores + alibiBias
+                    use attentionScoresWithBias : torch.Tensor = (+) attentionScores alibiBias
 
                     //preventing tokens from attending to future ones
-                    use mask: torch.Tensor = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
+                    use mask : torch.Tensor = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
                     use maskedScores = attentionScoresWithBias.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
                     use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
+                       
+                    //async workflows as fast as tasks for this use case   
+                    let result = 
+                        [
+                            torch.matmul(attentionWeights, v).transpose(1, 2).contiguous().view(batch, seq, dModel) |> outputProjection.forward
+                            normedInput |> layerNorm2.forward |> feedForward1.forward |> gelu |> feedForward2.forward |> dropout.forward
+                        ]
+                        |> List.Parallel.map id
 
+                    use attnResult = result |> List.head
+                    use ffnResult = result |> List.last 
+                   
+                    (*
                     let attnTask = 
                         Task.Run
                             (fun _
@@ -163,13 +191,14 @@ module Transformer_TorchSharp4 =
 
                     use attnResult = attnTask.Result
                     use ffnResult = ffnTask.Result
+                     *)
 
                     //Skip (residual) connections with scaling - prevent exploding activations in very deep networks (not used in my GPT-2-like model)
                     use residualScale = 1.0f / float32 (2 * numLayers) |> torch.tensor
 
-                    use out1 = x + attnTask.Result * residualScale //The first skip (residual) connection after multi-head attention
+                    use out1 = x + attnResult * residualScale //The first skip (residual) connection after multi-head attention
 
-                    out1 + ffnTask.Result * residualScale //The second residual connection after feed-forward network
+                    out1 + ffnResult * residualScale //The second residual connection after feed-forward network
 
             | shapeArr -> failwithf "Invalid input shape: %A" shapeArr
 
@@ -189,13 +218,14 @@ module Transformer_TorchSharp4 =
         let norm = new RMSNorm([|dModel|], 1e-5f)
 
         do outputLayer.weight <- embedding.weight
+
         do self.RegisterComponents()
 
         override _.forward x =
 
             use emb = embedding.forward x
-            use embWithPosDropped = dropout.forward emb
-            use decoderOut = Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithPosDropped decoderLayers
+            use embWithDropout = dropout.forward emb //embeddings remain position-free            
+            use decoderOut = decoderLayers |> Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithDropout 
             use normOut = norm.forward decoderOut
 
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)    
@@ -215,12 +245,12 @@ module Transformer_TorchSharp4 =
         |> List.iter
             (fun epoch 
                 ->
-                let counter = epoch + 1
+                let counter = (+) epoch 1
 
                 optimizer.zero_grad() // Clears old gradients from the previous step before the next backward pass 
 
-                let output = model.forward input
-                let loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), target.contiguous().view(-1L)) //computes gradients
+                use output = model.forward input
+                use loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), target.contiguous().view(-1L)) //computes gradients
 
                 let perplexity = torch.exp(loss).item<float32>() 
 
@@ -236,14 +266,12 @@ module Transformer_TorchSharp4 =
                     ->
                     printfn "%s" (string ex.Message)
 
+                //model change happens explicitly in optimizer.step() - changed model is the result of trainEpoch (this side effect is a nightmare for a functional programmer)   
                 optimizer.step() |> ignore<torch.Tensor>   //update parameters based on gradients (Adam is actually run here)            
         
                 match counter % 20 with
                 | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
                 | _ -> ()
-
-                loss.Dispose()
-                output.Dispose()
             )                    
 
     //*************************************************************         
@@ -273,8 +301,8 @@ module Transformer_TorchSharp4 =
 
             | Top_p
                 ->
-                use scaledLogits: torch.Tensor = logits / temp
-                use probs: torch.Tensor = softmax(scaledLogits, dim = 0L)
+                use scaledLogits : torch.Tensor = logits / temp
+                use probs : torch.Tensor = softmax(scaledLogits, dim = 0L)
                 let struct (sortedProbs: torch.Tensor, sortedIndices: torch.Tensor) = torch.sort(probs, dim = 0L, descending = true)
                 use sortedProbs = sortedProbs
                 use cumulativeProbs: torch.Tensor = torch.cumsum(sortedProbs, dim = 0L)
@@ -287,10 +315,10 @@ module Transformer_TorchSharp4 =
                     | _                        -> failwithf "Unsupported dtype for cumulativeProbs: %A" cumulativeProbs.dtype
                     *)
             
-                use mask: torch.Tensor = torch.gt(cumulativeProbs, pTensor)
-                use nonzero: torch.Tensor = torch.nonzero(mask)
+                use mask : torch.Tensor = torch.gt(cumulativeProbs, pTensor)
+                use nonzero : torch.Tensor = torch.nonzero(mask)
             
-                let cutoff: int64 =
+                let cutoff : int64 =
                     match nonzero.shape.[0] with
                     | 0L -> sortedProbs.shape.[0]  // Use all tokens
                     | _  -> nonzero.[0].item<int64>()
@@ -372,9 +400,11 @@ module Transformer_TorchSharp4 =
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm //just configuration
         
-        //model.train() //Setting the model for the pre-training mode
+        //Uncomment for pre-training
+        model.train() //Setting the model for the pre-training mode
         
-        //trainEpoch model optimizer lossFn input target epochs "Pre-training"
+        //Uncomment for pre-training
+        trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
         // FINE-TUNING 
         printfn "Starting fine-tuning..."
@@ -383,12 +413,15 @@ module Transformer_TorchSharp4 =
         use fineTuneInput = torch.tensor(fineTuneInputData, device = device)
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
-        
-        //model.train() //Setting the model for the fine-tuning mode
 
-        //trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+        //Uncomment for fine-tuning
+        model.train() //Setting the model for the fine-tuning mode
 
-        //model.save("model4.pt") |> ignore<torch.nn.Module>
+        //Uncomment for fine-tuning
+        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+
+        //Uncomment for saving weights and biases
+        model.save("model4.pt") |> ignore<torch.nn.Module>
         model.load("model4.pt") |> ignore<torch.nn.Module>
 
         // INFERENCE

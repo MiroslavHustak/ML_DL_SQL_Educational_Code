@@ -271,6 +271,8 @@ module Transformer_TorchSharpEducation =
             //layer normalization on the output of the transformer layers //uplne posledni embeddings  (not trained yet)         
             let normOut = norm.forward decoderLayersOutput           
             
+            //output is a tensor of shape [batchSize; seqLen; vocabSize] //values are logits (unnormalized scores) in float32 format
+            //output is ready to compute a loss for training or predict the next token during inference.
             outputLayer.forward(normOut).to_type(torch.ScalarType.Float32) // [batch, seq, vocabSize]
 
     // Training loop for pre-training or fine-tuning with perplexity evaluation

@@ -140,7 +140,7 @@ module Transformer_TorchSharp =
             let decoderLayersList = List.init numLayers createLayer
             let decoderLayersArray = List.toArray decoderLayersList
             
-            ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor >> decoderLayersArray
+            ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>> decoderLayersArray
         
         let outputLayer = Linear(dModel, vocabSize) // LOAD PRE-TRAINED GPT-2 OUTPUT LAYER WEIGHTS AND BIASES HERE (MAY BE TIED TO EMBEDDING WEIGHTS)
         let norm = LayerNorm [|dModel|] // LOAD PRE-TRAINED GPT-2 FINAL LAYER NORM SCALE AND SHIFT HERE
@@ -165,6 +165,8 @@ module Transformer_TorchSharp =
             Alongside multi-head attention, it produces contextualized embeddings that are normalized and used to compute logits = emb @ W^T + b. 
             The FFN’s parameters ([288, 72], [72, 288], biases) are updated by the Adam optimizer to improve predictions.
             *)
+            //layer.forward executes all the operations defined in the TransformerDecoderLayer, including self-attention, feed-forward networks, residual connections, and normalization
+                        
             let decoderLayersOutput = Seq.fold (fun x (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward(x)) embWithPos decoderLayers
             
             // OBTAINING NORMALIZED CONTEXTUALIZED EMBEDDINGS READY FOR LOGIT COMPUTATION

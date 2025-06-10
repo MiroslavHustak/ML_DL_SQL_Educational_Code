@@ -34,21 +34,15 @@ module Transformer_TorchSharp2 =
     // MODEL ARCHITECTURE DEFINITION SECTION
     // GPT-2-like architecture (decoder-only Transformer)
     // Does not include production-grade tokenizer
-    //*************************************************************
-
-    let private getPositionalEncodings (seqLen: int64) (dModel: int64) (device: torch.Device) : torch.Tensor =
-
-        use position = torch.arange(seqLen, dtype = torch.float32, device = device).unsqueeze(1)
-        use divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype = torch.float32, device = device) * (-Math.Log 10000.0 / float dModel))
-        
-        let encodings = torch.zeros([|seqLen; dModel|], device = device)  //use is not possible here
-        encodings.index_copy_(1, torch.arange(0L, dModel, 2L, device = device), torch.sin(position * divTerm)) |> ignore<torch.Tensor>
-        encodings.index_copy_(1, torch.arange(1L, dModel, 2L, device = device), torch.cos(position * divTerm)) |> ignore<torch.Tensor>
-        encodings
+    //*************************************************************    
 
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
+
+        let printCurrentTime () =
+            let currentTime = DateTime.Now.ToString("HH:mm:ss:fff")
+            printfn "Current time: %s" currentTime    
 
         let qkvProjection = Linear(dModel, dModel * 3L)
         let outputProjection = Linear(dModel, dModel)
@@ -80,16 +74,31 @@ module Transformer_TorchSharp2 =
                 //use q = qkvReshaped.select(2, 0L).transpose(1, 2)
                 //use k = qkvReshaped.select(2, 1L).transpose(1, 2)
                 //use v = qkvReshaped.select(2, 2L).transpose(1, 2)
+                
+                //async workflows as fast as tasks for this use case
+                let result = 
+                    [
+                        qkvReshaped.select(2, 0L).transpose(1, 2)
+                        qkvReshaped.select(2, 1L).transpose(1, 2)
+                        qkvReshaped.select(2, 2L).transpose(1, 2)
+                    ]
+                    |> List.Parallel.map id
 
+                use q = result |> List.head
+                use k = result |> List.item 1
+                use v = result |> List.last 
+                
+                (*
                 let qTask = Task.Run (fun () -> qkvReshaped.select(2, 0L).transpose(1, 2))
                 let kTask = Task.Run (fun () -> qkvReshaped.select(2, 1L).transpose(1, 2))
                 let vTask = Task.Run (fun () -> qkvReshaped.select(2, 2L).transpose(1, 2))
 
                 Task.WaitAll([| qTask :> Task; kTask :> Task; vTask :> Task |])
-
+                
                 use q = qTask.Result
                 use k = kTask.Result
-                use v = vTask.Result
+                use v = vTask.Result                        
+                *)
 
                 use attentionScores = torch.matmul(q, k.transpose(-2, -1)) / sqrt(float headDim)
                 use mask = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
@@ -123,6 +132,17 @@ module Transformer_TorchSharp2 =
     type private Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int, device: torch.Device) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("Transformer")
+        
+        // Sinusoidal non-learnable positional encodings
+        let getPositionalEncodings (seqLen: int64) (dModel: int64) (device: torch.Device) : torch.Tensor =
+        
+            use position = torch.arange(seqLen, dtype = torch.float32, device = device).unsqueeze(1)
+            use divTerm = torch.exp(torch.arange(0L, dModel, 2L, dtype = torch.float32, device = device) * (-Math.Log 10000.0 / float dModel))
+                
+            let encodings = torch.zeros([|seqLen; dModel|], device = device)  //use is not possible here
+            encodings.index_copy_(1, torch.arange(0L, dModel, 2L, device = device), torch.sin(position * divTerm)) |> ignore<torch.Tensor>
+            encodings.index_copy_(1, torch.arange(1L, dModel, 2L, device = device), torch.cos(position * divTerm)) |> ignore<torch.Tensor>
+            encodings  
 
         let embedding = Embedding(vocabSize, dModel)
         let posEnc = getPositionalEncodings 128L dModel device  
@@ -147,10 +167,13 @@ module Transformer_TorchSharp2 =
             use embWithPos = emb + posEnc.narrow(0L, 0L, seqLen)
             use embWithPosDropped = dropout.forward embWithPos
 
-            use decoderOut = Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithPosDropped decoderLayers
-            use normOut = norm.forward decoderOut
+            //layer.forward executes all the operations defined in the TransformerDecoderLayer, including self-attention, feed-forward networks, residual connections, and normalization
+            use decoderOut = decoderLayers |> Seq.fold (fun acc (layer: torch.nn.Module<torch.Tensor, torch.Tensor>) -> layer.forward acc) embWithPosDropped 
+            use normOut = norm.forward decoderOut 
 
-            outputLayer.forward(normOut).to_type(torch.ScalarType.Float32)
+            //output is a tensor of shape [batchSize; seqLen; vocabSize] //values are logits (unnormalized scores) in float32 format
+            //output is ready to compute a loss for training or predict the next token during inference
+            outputLayer.forward(normOut).to_type(torch.ScalarType.Float32) 
 
     //*************************************************************   
     // For mathematicians:
@@ -171,8 +194,8 @@ module Transformer_TorchSharp2 =
 
                 optimizer.zero_grad() // Clears old gradients from the previous step before the next backward pass                
 
-                let output = model.forward input
-                let loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), target.contiguous().view(-1L))
+                use output = model.forward input
+                use loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), target.contiguous().view(-1L))
 
                 let perplexity = torch.exp(loss).item<float32>() 
 
@@ -188,14 +211,12 @@ module Transformer_TorchSharp2 =
                     ->
                     printfn "%s" (string ex.Message)
 
+                //model change happens explicitly in optimizer.step() - changed model is the result of trainEpoch (this side effect is a nightmare for a functional programmer)  
                 optimizer.step() |> ignore<torch.Tensor>    //update parameters based on gradients (Adam is actually run here)          
         
                 match counter % 20 with
                 | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
                 | _ -> ()
-
-                loss.Dispose()
-                output.Dispose()
             )        
             
     //*************************************************************         
@@ -227,8 +248,12 @@ module Transformer_TorchSharp2 =
                 ->
                 use scaledLogits: torch.Tensor = logits / temp
                 use probs: torch.Tensor = softmax(scaledLogits, dim = 0L)
+                
                 let struct (sortedProbs: torch.Tensor, sortedIndices: torch.Tensor) = torch.sort(probs, dim = 0L, descending = true)
+                
                 use sortedProbs = sortedProbs
+                use sortedIndices = sortedIndices
+                
                 use cumulativeProbs: torch.Tensor = torch.cumsum(sortedProbs, dim = 0L)
             
                 let pTensor = torch.tensor(float32 p, device = cumulativeProbs.device) //C++ always gives a warning about ignoring complex numbers when applying dtype
@@ -324,8 +349,10 @@ module Transformer_TorchSharp2 =
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
+        //Uncomment for pre-training
         //model.train() //Setting the model for the pre-training mode
         
+        //Uncomment for pre-training
         //trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
         // FINE-TUNING 
@@ -336,10 +363,13 @@ module Transformer_TorchSharp2 =
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
+        //Uncomment for fine-tuning
         //model.train() //Setting the model for the fine-tuning mode
 
+        //Uncomment for fine-tuning
         //trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
+        //Uncomment for saving weights and biases
         //model.save("model2.pt") |> ignore<torch.nn.Module>
         model.load("model2.pt") |> ignore<torch.nn.Module>
 

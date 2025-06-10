@@ -30,4 +30,4 @@ module Option =
 
     let internal ofStringOption str =
         str 
-        |> Option.bind (fun item -> Option.filter (fun item -> not (item.Equals(String.Empty))) (Some (string item)))       
+        |> Option.bind (fun item -> Option.filter (fun item -> not (item.Equals(String.Empty))) (Some (string item))) 

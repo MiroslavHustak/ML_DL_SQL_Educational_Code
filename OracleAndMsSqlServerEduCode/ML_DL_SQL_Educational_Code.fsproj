@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Helpers\ListParallel.fs" />
+    <Compile Include="Helpers\Helpers.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\MLP\MultipleHiddenLayerMLP.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\Settings.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\CustomTokenizer.fs" />
@@ -24,7 +26,6 @@
     <Compile Include="MachineLearning\LogisticRegression.fs" />
     <Compile Include="MachineLearning\LinearRegression2.fs" />
     <Compile Include="MachineLearning\LinearRegression.fs" />
-    <Compile Include="Helpers\Helpers.fs" />
     <Compile Include="SQL\Oracle_Example\SubQueries.fs" />
     <Compile Include="SQL\Oracle_Example\ExcelTypeProvider.fs" />
     <Compile Include="SQL\Oracle_Example\Queries.fs" />
