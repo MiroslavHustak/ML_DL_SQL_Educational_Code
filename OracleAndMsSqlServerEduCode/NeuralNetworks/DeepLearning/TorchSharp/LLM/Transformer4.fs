@@ -1,4 +1,4 @@
-﻿namespace NeuralNetworks
+﻿namespace NeuralNetworks //275
 
 open System
 open System.Threading.Tasks
@@ -12,7 +12,7 @@ open type torch.nn.functional
 open Settings
 
 //*******************************************************************
-// GPT-4 in architecture (not in scale) without calling external tools
+// GPT-4 in architecture (not in scale) without calling external tools 
 
 // This code is still under development and is intended for educational purposes only.
 // Submitting issues and pull requests is welcome.
@@ -45,7 +45,7 @@ module Transformer_TorchSharp4 =
 
         override _.forward (x: torch.Tensor) =
 
-            let norm = x.pow(torch.tensor(2.0f)).mean([|-1L|], keepdim = true).add(eps).sqrt() 
+            use norm = x.pow(torch.tensor(2.0f)).mean([|-1L|], keepdim = true).add(eps).sqrt() 
             x / norm * weight
 
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
@@ -78,12 +78,12 @@ module Transformer_TorchSharp4 =
             
                 let dim = lastDim / 2L
             
-                let theta = torch.pow(10000.0f, torch.arange(0L, dim, device=q.device, dtype=torch.float32) / float32 dim)
+                use theta = torch.pow(10000.0f, torch.arange(0L, dim, device=q.device, dtype=torch.float32) / float32 dim)
                 let seqLen = q.shape.[q.shape.Length - 2]
-                let positionIds = torch.arange(seqLen, device=q.device, dtype=torch.float32).unsqueeze(-1)
-                let freqs = positionIds / theta
-                let sin = torch.sin(freqs)
-                let cos = torch.cos(freqs)
+                use positionIds = torch.arange(seqLen, device=q.device, dtype=torch.float32).unsqueeze(-1)
+                use freqs = positionIds / theta
+                use sin = torch.sin(freqs)
+                use cos = torch.cos(freqs)
     
                 let reshapeForRotation (x: torch.Tensor) =
 
@@ -92,15 +92,17 @@ module Transformer_TorchSharp4 =
                     | true  -> failwithf "Split did not return two tensors. Split length: %d, dim: %A, x.shape: %A" split.Length dim x.shape
                     | false -> ()
                 
-                    let a, b = split |> Array.head, split |> Array.last
+                    use a = split |> Array.head
+                    use b = split |> Array.last
+
                     torch.cat([|(a * cos) - (b * sin); (a * sin) + (b * cos)|], dim = -1)
     
                 reshapeForRotation q, reshapeForRotation k 
 
             let getAlibiBias (nHeads: int64) (seq: int64) (device: torch.Device) = //Attention with linear biases
 
-                let slopes = torch.linspace(1.0, 0.0, int nHeads, dtype = torch.float32, device = device).unsqueeze(-1).unsqueeze(-1)
-                let bias = torch.arange(seq, device = device).unsqueeze(0).unsqueeze(0).float()
+                use slopes = torch.linspace(1.0, 0.0, int nHeads, dtype = torch.float32, device = device).unsqueeze(-1).unsqueeze(-1)
+                use bias = torch.arange(seq, device = device).unsqueeze(0).unsqueeze(0).float()
                 (*) slopes bias
 
             match x.shape with
@@ -108,44 +110,51 @@ module Transformer_TorchSharp4 =
                 when dmodel = dModel
                     ->
                     use normedInput = layerNorm1.forward x
-                              
-                    //async workflows as fast as tasks for large CPU-bound tensor operations  
-                    let result = 
-                        [
-                            qProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; nHeads; headDim|]).transpose(1, 2)
-                            kProjection.forward(normedInput).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
-                            vProjection.forward(normedInput).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
-                        ]
-                        |> List.Parallel.map id
 
+                    //With my model, no big difference when run sequentially, with .NET tasks (directly or with Array.Parallel), or with async workflows
+                    let result = 
+                        match torch.cuda.is_available() with
+                        | true 
+                            -> 
+                            // GPU path: batched execution to reduce kernel overhead
+                            //TODO: VERIFY THIS CODE WITH GPUs
+                            let q = qProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; nHeads; headDim|]).transpose(1, 2)
+                            let k = kProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
+                            let v = vProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
+                            let q = q.cuda()
+                            let k = k.cuda()
+                            let v = v.cuda()
+                            let qkv = torch.cat([| q; k; v |], dim=2L) 
+
+                            [
+                                qkv.slice(1L, 0L, int64 nHeads, headDim)  // q: [batch, nHeads, seq, headDim]
+                                qkv.slice(1L, int64 nHeads, int64 (nHeads + kvHeads), headDim)  // k: [batch, kvHeads, seq, headDim]
+                                qkv.slice(1L, int64 (nHeads + kvHeads), int64 (nHeads + 2L * kvHeads), headDim)  // v: [batch, kvHeads, seq, headDim]
+                            ]
+
+                        | false 
+                            -> //CPU path
+                            [
+                                (fun () -> qProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; nHeads; headDim|]).transpose(1, 2))
+                                (fun () -> kProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2))
+                                (fun () -> vProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2))
+                            ]
+                            |> List.Parallel.map (fun f -> f())
+                    
                     use q = result |> List.head
                     use k = result |> List.item 1
-                    use v = result |> List.last 
+                    use v = result |> List.last
                     
                     (*
-                    let qTask = 
-                        Task.Run
-                            (fun _
-                                -> qProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; nHeads; headDim|]).transpose(1, 2)
-                            )
-
-                    let kTask = 
-                        Task.Run
-                            (fun _
-                                -> kProjection.forward(normedInput).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
-                            )
-
-                    let vTask = 
-                        Task.Run
-                            (fun _
-                                -> vProjection.forward(normedInput).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
-                            )
+                    let qTask = Task.Run (fun _ -> qProjection.forward ...)
+                    let kTask = Task.Run (fun _ -> kProjection.forward ...)                      
+                    let vTask = Task.Run (fun _ -> vProjection.forward ...)   
 
                     Task.WaitAll([| qTask :> Task; kTask :> Task; vTask :> Task |])
-
+                    
                     use q = qTask.Result
                     use k = kTask.Result
-                    use v = vTask.Result                   
+                    use v = vTask.Result  
                     *)
 
                     let qRoPE, kRoPE = applyRotary q k
@@ -163,13 +172,12 @@ module Transformer_TorchSharp4 =
                     use maskedScores = attentionScoresWithBias.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
                     use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
                        
-                    //async workflows as fast as tasks for large CPU-bound tensor operations    
                     let result = 
                         [
-                            torch.matmul(attentionWeights, v).transpose(1, 2).contiguous().view(batch, seq, dModel) |> outputProjection.forward
-                            normedInput |> layerNorm2.forward |> feedForward1.forward |> gelu |> feedForward2.forward |> dropout.forward
+                            (fun () -> torch.matmul(attentionWeights, v).transpose(1, 2).contiguous().view(batch, seq, dModel) |> outputProjection.forward)
+                            (fun () -> normedInput |> layerNorm2.forward |> feedForward1.forward |> gelu |> feedForward2.forward |> dropout.forward)
                         ]
-                        |> List.Parallel.map id
+                        |> List.Parallel.map (fun f -> f())
 
                     use attnResult = result |> List.head
                     use ffnResult = result |> List.last 
@@ -241,7 +249,7 @@ module Transformer_TorchSharp4 =
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
                            (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
 
-        //Learning rate ccheduler (includes warmup and cosine decay)  
+        //Learning rate scheduler (includes warmup and cosine decay)  
         let learningRateSchedule (warmupSteps: int) (totalSteps: int) (baseLr: float32) (step: int) : float32 =
 
             match step with
@@ -433,10 +441,10 @@ module Transformer_TorchSharp4 =
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm //just configuration
         
         //Uncomment for pre-training
-        //model.train() //Setting the model for the pre-training mode
+        model.train() //Setting the model for the pre-training mode
         
         //Uncomment for pre-training
-        //trainEpoch model optimizer lossFn input target epochs "Pre-training"
+        trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
         // FINE-TUNING 
         printfn "Starting fine-tuning..."
@@ -447,13 +455,13 @@ module Transformer_TorchSharp4 =
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
 
         //Uncomment for fine-tuning
-        //model.train() //Setting the model for the fine-tuning mode
+        model.train() //Setting the model for the fine-tuning mode
 
         //Uncomment for fine-tuning
-        //trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
         //Uncomment for saving weights and biases
-        //model.save("model4.pt") |> ignore<torch.nn.Module>
+        model.save("model4.pt") |> ignore<torch.nn.Module>
         model.load("model4.pt") |> ignore<torch.nn.Module>
 
         // INFERENCE

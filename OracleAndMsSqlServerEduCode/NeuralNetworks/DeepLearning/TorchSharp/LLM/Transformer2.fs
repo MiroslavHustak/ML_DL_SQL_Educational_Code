@@ -1,4 +1,4 @@
-﻿namespace NeuralNetworks
+﻿namespace NeuralNetworks //237
 
 open System
 open System.Threading.Tasks
@@ -75,14 +75,13 @@ module Transformer_TorchSharp2 =
                 //use k = qkvReshaped.select(2, 1L).transpose(1, 2)
                 //use v = qkvReshaped.select(2, 2L).transpose(1, 2)
                 
-                //async workflows as fast as tasks for this use case
                 let result = 
                     [
-                        qkvReshaped.select(2, 0L).transpose(1, 2)
-                        qkvReshaped.select(2, 1L).transpose(1, 2)
-                        qkvReshaped.select(2, 2L).transpose(1, 2)
+                        (fun () -> qkvReshaped.select(2, 0L).transpose(1, 2))
+                        (fun () -> qkvReshaped.select(2, 1L).transpose(1, 2))
+                        (fun () -> qkvReshaped.select(2, 2L).transpose(1, 2))
                     ]
-                    |> List.Parallel.map id
+                    |> List.Parallel.map (fun f -> f())
 
                 use q = result |> List.head
                 use k = result |> List.item 1
@@ -350,10 +349,10 @@ module Transformer_TorchSharp2 =
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
         //Uncomment for pre-training
-        //model.train() //Setting the model for the pre-training mode
+        model.train() //Setting the model for the pre-training mode
         
         //Uncomment for pre-training
-        //trainEpoch model optimizer lossFn input target epochs "Pre-training"
+        trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
         // FINE-TUNING 
         printfn "Starting fine-tuning..."
@@ -364,13 +363,13 @@ module Transformer_TorchSharp2 =
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
         //Uncomment for fine-tuning
-        //model.train() //Setting the model for the fine-tuning mode
+        model.train() //Setting the model for the fine-tuning mode
 
         //Uncomment for fine-tuning
-        //trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
         //Uncomment for saving weights and biases
-        //model.save("model2.pt") |> ignore<torch.nn.Module>
+        model.save("model2.pt") |> ignore<torch.nn.Module>
         model.load("model2.pt") |> ignore<torch.nn.Module>
 
         // INFERENCE
