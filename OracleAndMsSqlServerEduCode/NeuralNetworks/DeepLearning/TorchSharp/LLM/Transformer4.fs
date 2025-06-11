@@ -40,7 +40,7 @@ module Transformer_TorchSharp4 =
         inherit Module<torch.Tensor, torch.Tensor>("RMSNorm")
 
         let weight = torch.nn.Parameter(torch.ones(normalizedShape))
-        let eps = torch.tensor(eps)
+        let eps = torch.tensor eps
         do self.RegisterComponents()
 
         override _.forward (x: torch.Tensor) =
@@ -82,8 +82,8 @@ module Transformer_TorchSharp4 =
                 let seqLen = q.shape.[q.shape.Length - 2]
                 use positionIds = torch.arange(seqLen, device=q.device, dtype=torch.float32).unsqueeze(-1)
                 use freqs = positionIds / theta
-                use sin = torch.sin(freqs)
-                use cos = torch.cos(freqs)
+                use sin = torch.sin freqs
+                use cos = torch.cos freqs
     
                 let reshapeForRotation (x: torch.Tensor) =
 
@@ -345,6 +345,7 @@ module Transformer_TorchSharp4 =
                 use probs : torch.Tensor = softmax(scaledLogits, dim = 0L)
                 let struct (sortedProbs: torch.Tensor, sortedIndices: torch.Tensor) = torch.sort(probs, dim = 0L, descending = true)
                 use sortedProbs = sortedProbs
+                use sortedIndices = sortedIndices
                 use cumulativeProbs: torch.Tensor = torch.cumsum(sortedProbs, dim = 0L)
             
                 let pTensor = torch.tensor(float32 p, device = cumulativeProbs.device) //C++ always gives a warning about ignoring complex numbers when applying dtype
@@ -356,7 +357,7 @@ module Transformer_TorchSharp4 =
                     *)
             
                 use mask : torch.Tensor = torch.gt(cumulativeProbs, pTensor)
-                use nonzero : torch.Tensor = torch.nonzero(mask)
+                use nonzero : torch.Tensor = torch.nonzero mask
             
                 let cutoff : int64 =
                     match nonzero.shape.[0] with

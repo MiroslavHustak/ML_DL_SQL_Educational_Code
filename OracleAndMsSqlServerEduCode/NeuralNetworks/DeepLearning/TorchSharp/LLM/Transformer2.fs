@@ -40,10 +40,6 @@ module Transformer_TorchSharp2 =
 
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")
 
-        let printCurrentTime () =
-            let currentTime = DateTime.Now.ToString("HH:mm:ss:fff")
-            printfn "Current time: %s" currentTime    
-
         let qkvProjection = Linear(dModel, dModel * 3L)
         let outputProjection = Linear(dModel, dModel)
         let feedForward1 = Linear(dModel, dModel * 4L)
@@ -69,7 +65,7 @@ module Transformer_TorchSharp2 =
 
                 use normedInput1 = layerNorm1.forward x //applied before the attention block (qkvProjection.forward) => pre-norm.
                 use qkv = qkvProjection.forward normedInput1
-                use qkvReshaped = qkv.view(reshapedShape)
+                use qkvReshaped = qkv.view reshapedShape
 
                 //use q = qkvReshaped.select(2, 0L).transpose(1, 2)
                 //use k = qkvReshaped.select(2, 1L).transpose(1, 2)
