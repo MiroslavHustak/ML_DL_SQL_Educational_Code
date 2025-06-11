@@ -39,7 +39,7 @@ module Transformer_TorchSharp4 =
 
         inherit Module<torch.Tensor, torch.Tensor>("RMSNorm")
 
-        let weight = torch.nn.Parameter(torch.ones(normalizedShape))
+        let weight = torch.nn.Parameter(torch.ones normalizedShape)
         let eps = torch.tensor eps
         do self.RegisterComponents()
 
