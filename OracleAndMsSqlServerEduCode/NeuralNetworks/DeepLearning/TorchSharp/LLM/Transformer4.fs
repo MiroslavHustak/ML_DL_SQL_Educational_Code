@@ -12,7 +12,7 @@ open type torch.nn.functional
 open Settings
 
 //*******************************************************************
-// GPT-4 in architecture (not in scale) without calling external tools 
+// GPT-2 in architecture (not in scale) without calling external tools and inhanced with features possibly used in GPT-4 
 
 // This code is still under development and is intended for educational purposes only.
 // Submitting issues and pull requests is welcome.
@@ -31,7 +31,7 @@ module Transformer_TorchSharp4 =
 
     //*************************************************************  
     // MODEL ARCHITECTURE DEFINITION SECTION
-    // GPT-4-like architecture (decoder-only Transformer with RoPE and RMSNorm)
+    // Enhanced GPT-2-like architecture (decoder-only Transformer with RoPE and RMSNorm)
     // Does not include FlashAttention, fused ops, production-grade tokenizer, checkpointing, LoRA, or quantisation
     //*************************************************************
         
