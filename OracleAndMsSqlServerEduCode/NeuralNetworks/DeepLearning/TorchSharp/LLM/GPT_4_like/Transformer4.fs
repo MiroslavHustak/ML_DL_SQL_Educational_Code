@@ -1,7 +1,6 @@
 ﻿namespace NeuralNetworks //275
 
 open System
-open System.Threading.Tasks
 
 open TorchSharp
 open TorchSharp.Modules
@@ -9,6 +8,7 @@ open TorchSharp.Modules
 open type torch.nn
 open type torch.nn.functional
 
+open LoRa 
 open Settings
 
 //*******************************************************************
@@ -48,17 +48,25 @@ module Transformer_TorchSharp4 =
             use norm = x.pow(torch.tensor(2.0f)).mean([|-1L|], keepdim = true).add(eps).sqrt() 
             x / norm * weight
 
-    type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
+    type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32, device: torch.Device, useLora: bool) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("TransformerDecoderLayer")       
 
         let headDim = dModel / nHeads
         let kvHeads = nHeads / 4L |> max 1L
-        let qProjection = Linear(dModel, dModel)
-        let kProjection = Linear(dModel, kvHeads * headDim)
-        let vProjection = Linear(dModel, kvHeads * headDim)
-        let outputProjection = Linear(dModel, dModel)
 
+        //**********************LoRa**********************
+        let mkLinear (inF, outF) =
+            match useLora with
+            | true  -> new LoRALinear(inF, outF, rank = 4L, alpha = 32.0f, device = device) :> torch.nn.Module<torch.Tensor, torch.Tensor>
+            | false -> Linear(inF, outF) :> torch.nn.Module<torch.Tensor, torch.Tensor>
+
+        let qProjection = mkLinear(dModel, dModel)
+        let kProjection = mkLinear(dModel, kvHeads * headDim)
+        let vProjection = mkLinear(dModel, kvHeads * headDim)
+        
+        let outputProjection = mkLinear(dModel, dModel)
+              
         let feedForward1 = Linear(dModel, dModel * 4L)
         let feedForward2 = Linear(dModel * 4L, dModel)
         let layerNorm1 = new RMSNorm([|dModel|], 1e-5f)
@@ -210,7 +218,7 @@ module Transformer_TorchSharp4 =
 
             | shapeArr -> failwithf "Invalid input shape: %A" shapeArr
 
-    type private Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int, device: torch.Device) as self =
+    type private Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int, device: torch.Device, useLora: bool) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("Transformer")
 
@@ -218,7 +226,7 @@ module Transformer_TorchSharp4 =
         let dropout = Dropout(float dropoutRate)
 
         let decoderLayers =
-            List.init numLayers (fun _ -> new TransformerDecoderLayer(dModel, nHeads, dropoutRate) :> torch.nn.Module<torch.Tensor, torch.Tensor>)
+            List.init numLayers (fun _ -> new TransformerDecoderLayer(dModel, nHeads, dropoutRate, device, useLora) :> torch.nn.Module<torch.Tensor, torch.Tensor>)
             |> List.toArray
             |> ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>
 
@@ -275,8 +283,8 @@ module Transformer_TorchSharp4 =
                 let baseLr = 5e-4f //5 * 10^-4  //adapt
                 let warmupSteps = 10  //adapt
 
-                // Set learning rate dynamically based on schedule
-                let currentLr : float32 = learningRateSchedule warmupSteps maxEpochs baseLr epoch
+                // Set learning rate dynamically based on schedule 
+                //let currentLr : float32 = learningRateSchedule warmupSteps maxEpochs baseLr epoch  //uncomment and use with a better PC than I possess
 
                 let paramGroups = optimizer.ParamGroups
                 match paramGroups |> Seq.length > 0 with
@@ -437,7 +445,10 @@ module Transformer_TorchSharp4 =
         // * weights, biases, potentially learned positional encodings, layer normalization parameters
         printfn "Starting pre-training..."
 
-        use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device)).``to``(device)
+        let useLora = false // Better to pre-train the model with useLora = false
+        //let useLora = true  
+
+        use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device, useLora)).``to``(device)
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm //just configuration
         
@@ -447,8 +458,28 @@ module Transformer_TorchSharp4 =
         //Uncomment for pre-training
         trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
+        model.save("model4.pt") |> ignore<torch.nn.Module>
+        
         // FINE-TUNING 
         printfn "Starting fine-tuning..."
+
+        model.load("model4.pt", strict = false) |> ignore<torch.nn.Module>
+        //model.load("model4.pt", strict = true) |> ignore<torch.nn.Module> only if the model is pretrained with useLora = true
+
+        let freezeBaseWeights (model: torch.nn.Module) =
+            model.named_parameters()
+            |> Seq.iter
+                (fun struct (name, param)
+                    ->
+                    match name.EndsWith(".A") || name.EndsWith(".B") with
+                    | true  -> () //printfn "Trainable: %s" name
+                    | false -> param.requires_grad <- false
+            )
+
+        // Freeze all base (= pre-trained and fine-tuned) model weights; only LoRA weights (A and B) will be updated during fine-tuning
+        match useLora with
+        | true  -> freezeBaseWeights model 
+        | false -> ()
         
         let (fineTuneInputData, fineTuneTargetData) = TextData2.getFineTuningCausalLMSequences ()
         use fineTuneInput = torch.tensor(fineTuneInputData, device = device)
@@ -462,12 +493,13 @@ module Transformer_TorchSharp4 =
         trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
         //Uncomment for saving weights and biases
-        model.save("model4.pt") |> ignore<torch.nn.Module>
-        model.load("model4.pt") |> ignore<torch.nn.Module>
+        model.save("model4.pt") |> ignore<torch.nn.Module>       
 
         // INFERENCE
         printfn "Generating sequence after fine-tuning..."
-               
+
+        model.load("model4.pt") |> ignore<torch.nn.Module>
+                           
         let promptContent = "What is the colour of the Sun? <sep>"
         let promptTokens = Tokenizer2.tokenize promptContent |> List.toArray
 

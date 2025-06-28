@@ -1,7 +1,6 @@
 ﻿namespace NeuralNetworks
 
-open System
-open TorchSharp
+open TiktokenSharp
 open System.Text.RegularExpressions
 
 module Tokenizer =
@@ -72,9 +71,7 @@ module Tokenizer =
             ) //common placeholder token used in Natural Language Processing (NLP) meaning "unknown".
 
 module Tokenizer2 =
-
-    open System.Text.RegularExpressions
-       
+         
     let internal wordToIndex =
         Settings.vocabulary
         |> Seq.mapi (fun i word -> (word, int64 i))
@@ -143,8 +140,6 @@ module Tokenizer2 =
             )
 
 module TikTokTokenizer =
-
-    open TiktokenSharp
 
     // NEBUDE FUNGOVAT, nebot mam vocabSize = 8, coz je malo
 

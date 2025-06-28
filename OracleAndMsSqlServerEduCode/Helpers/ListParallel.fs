@@ -3,8 +3,6 @@
 [<RequireQualifiedAccess>]
 module List.Parallel
 
-open System
-
 let map (action : 'a -> 'b) (list : 'a list) =
 
     match list with

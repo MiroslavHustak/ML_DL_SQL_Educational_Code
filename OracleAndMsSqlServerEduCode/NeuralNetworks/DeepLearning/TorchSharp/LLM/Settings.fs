@@ -1,13 +1,5 @@
 ﻿namespace NeuralNetworks
 
-open System
-
-open TorchSharp
-open TorchSharp.Modules
-
-open type torch.nn
-open type torch.nn.functional
-
 type Strategy = 
     | Top_k
     | Top_p

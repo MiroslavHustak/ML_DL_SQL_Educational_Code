@@ -14,6 +14,7 @@ open Helpers
 [<Literal>] 
 let TypeProviderConn = @"Data Source=Misa\SQLEXPRESS;Initial Catalog=DGSada;Integrated Security=True;Encrypt=False"
 
+(*
 
 //*********************************************************************
 //SqlCommandProvider
@@ -166,5 +167,5 @@ let internal insertOrUpdateTP3 () =
             } |> Seq.toList
     
     printfn "%A" example   
-
+*)
     

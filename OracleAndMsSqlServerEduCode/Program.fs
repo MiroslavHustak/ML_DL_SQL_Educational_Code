@@ -133,7 +133,11 @@ module Program =
     
     printCurrentTime () 
 
+    printfn "%s" <| String.replicate 50 "*"
+    printfn "Enhanced GPT-2 with GPT-4-like features" 
     NeuralNetworks.Transformer_TorchSharp4.main()
+    printfn "%s" <| String.replicate 50 "*"
+    printfn "GPT-2" 
     NeuralNetworks.Transformer_TorchSharp2.main()
 
     (*
