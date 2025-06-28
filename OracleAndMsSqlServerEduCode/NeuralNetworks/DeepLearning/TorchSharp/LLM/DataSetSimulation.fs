@@ -87,6 +87,7 @@ module TextData2 =
     /// Input: all tokens except last; Target: all tokens except first.
     /// Masking: Use pad token for prompt and <sep> in target so loss is not computed there.
     let internal getFineTuningCausalLMSequences () : int64[,] * int64[,] =
+
         let qaPairs : QAPair list =
             [
                 "What is the colour of the Sun?",     "The colour of the Sun is yellow."
@@ -97,9 +98,17 @@ module TextData2 =
                 "Is the sky yellow?",                 "No."
                 "Is the Sun yellow?",                 "Yes."
                 "Is the sky blue?",                   "Yes."
+                "What is the colour of the Sun?", "<sep> The colour of the Sun is yellow."
+                "What is the colour of the sky?", "<sep> The colour of the sky is blue."
+                "What colour is the Sun?", "<sep> yellow."
+                "What colour is the sky?", "<sep> blue."
+                "Is the Sun black?", "<sep> No."
+                "Is the sky yellow?", "<sep> No."
+                "Is the Sun yellow?", "<sep> Yes."
+                "Is the sky blue?", "<sep> Yes."
             ]
 
-        let nExamplesPerPair = 16
+        let nExamplesPerPair = 32
 
         let pad = Tokenizer2.wordToIndex.["<pad>"]
         let eos = Tokenizer2.eosTokenIdx
@@ -117,11 +126,11 @@ module TextData2 =
                     List.replicate nExamplesPerPair sequence
                 )
 
-        // Find the global max length for padding
-        let maxLen =
+        let maxLen = //24
             fullSeqs
             |> List.map List.length
             |> List.max
+            |> (+) 0
 
         // Pad with <pad>
         let paddedSeqs =

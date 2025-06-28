@@ -302,7 +302,8 @@ module Transformer_TorchSharp4 =
 
                 let perplexity = torch.exp(loss).item<float32>() 
 
-                try
+                try     
+                   
                     loss.backward() //computes loss
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> //Gradient clipping limits the combined size (norm) of all parameter gradients to 1.0
                 with
@@ -408,6 +409,7 @@ module Transformer_TorchSharp4 =
                 List.rev >> cont <| acc  //CPS applied // Stop recursion if the maximum number of steps is reached
         | false ->
                 use _ = torch.no_grad()
+
                 use trimmedInput = trimInput inputSeq
                 use logits = model.forward trimmedInput
                 use lastLogit = logits.select(0, 0L).select(0, -1L)
@@ -450,6 +452,8 @@ module Transformer_TorchSharp4 =
 
         use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device, useLora)).``to``(device)
         use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
+
+        //Uncomment for pre-training
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm //just configuration
         
         //Uncomment for pre-training
@@ -458,15 +462,18 @@ module Transformer_TorchSharp4 =
         //Uncomment for pre-training
         trainEpoch model optimizer lossFn input target epochs "Pre-training"
 
+        //Uncomment for pre-training
         model.save("model4.pt") |> ignore<torch.nn.Module>
         
         // FINE-TUNING 
         printfn "Starting fine-tuning..."
 
         model.load("model4.pt", strict = false) |> ignore<torch.nn.Module>
-        //model.load("model4.pt", strict = true) |> ignore<torch.nn.Module> only if the model is pretrained with useLora = true
+  
+        //load_LoRA_adapters model @"g:\LoRA\" |> ignore<torch.nn.Module> //Just added to show that this fn updates the model
 
         let freezeBaseWeights (model: torch.nn.Module) =
+
             model.named_parameters()
             |> Seq.iter
                 (fun struct (name, param)
@@ -484,13 +491,33 @@ module Transformer_TorchSharp4 =
         let (fineTuneInputData, fineTuneTargetData) = TextData2.getFineTuningCausalLMSequences ()
         use fineTuneInput = torch.tensor(fineTuneInputData, device = device)
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
-        use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
 
+        //Uncomment for fine-tuning without LoRA        
+        use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
+        (*
+        use fineTuneOptimizer = //this optimizer is only updating LoRA parameters.
+            torch.optim.Adam(
+                model.named_parameters()
+                |> Seq.filter (fun struct (_, p1) -> p1.requires_grad)
+                |> Seq.map (fun struct (_, p2) -> p2),
+                lr = learningRate
+            )
+        *)
+        
         //Uncomment for fine-tuning
         model.train() //Setting the model for the fine-tuning mode
 
         //Uncomment for fine-tuning
         trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
+
+        let gradNorm = 
+            model.parameters()
+            |> Seq.filter (fun p1 -> p1.requires_grad)
+            |> Seq.map (fun p2 -> p2.grad.norm())
+            |> Seq.reduce (fun acc norm -> acc + norm)
+        printfn "Gradient norm: %.4f" (gradNorm.item<float32>())
+
+        //save_LoRA_adapters model @"g:\LoRA\"
 
         //Uncomment for saving weights and biases
         model.save("model4.pt") |> ignore<torch.nn.Module>       
@@ -500,7 +527,7 @@ module Transformer_TorchSharp4 =
 
         model.load("model4.pt") |> ignore<torch.nn.Module>
                            
-        let promptContent = "What is the colour of the Sun? <sep>"
+        let promptContent = "What is the colour of the sky? <sep>"
         let promptTokens = Tokenizer2.tokenize promptContent |> List.toArray
 
         model.``to``("cpu") |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
@@ -526,7 +553,7 @@ module Transformer_TorchSharp4 =
                 match id >= 0L && id < int64 vocabulary.Length with
                 | true  -> printf "%s " (vocabulary |> List.item (int id))
                 | false -> printf "<unk> "
-            )
+            )        
 
         printfn "\n"
                
