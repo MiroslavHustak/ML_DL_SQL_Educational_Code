@@ -492,6 +492,7 @@ module Transformer_TorchSharp4 =
 
         //Uncomment for fine-tuning without LoRA        
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
+
         (*
         //Uncomment for fine-tuning with LoRA 
         use fineTuneOptimizer = //this optimizer is only updating LoRA parameters.
