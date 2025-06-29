@@ -2,7 +2,7 @@
 
 open System.Collections.Generic
 
-module LoRa =
+module LoRA =
     
     open TorchSharp
     open type torch.nn

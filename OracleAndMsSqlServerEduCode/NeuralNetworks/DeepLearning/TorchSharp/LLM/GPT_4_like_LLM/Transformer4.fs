@@ -8,7 +8,7 @@ open TorchSharp.Modules
 open type torch.nn
 open type torch.nn.functional
 
-open LoRa 
+open LoRA 
 open Settings
 
 //*******************************************************************
