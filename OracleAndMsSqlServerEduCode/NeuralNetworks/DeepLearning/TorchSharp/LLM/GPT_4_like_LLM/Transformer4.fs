@@ -12,7 +12,8 @@ open LoRa
 open Settings
 
 //*******************************************************************
-// GPT-2 in architecture (not in scale) without calling external tools and inhanced with features possibly used in GPT-4 
+// GPT-2 in architecture (not in scale) without calling external tools 
+// and inhanced with features possibly used in GPT-3 and GPT-4
 
 // This code is still under development and is intended for educational purposes only.
 // Submitting issues and pull requests is welcome.
@@ -44,7 +45,6 @@ module Transformer_TorchSharp4 =
         do self.RegisterComponents()
 
         override _.forward (x: torch.Tensor) =
-
             use norm = x.pow(torch.tensor(2.0f)).mean([|-1L|], keepdim = true).add(eps).sqrt() 
             x / norm * weight
 
@@ -55,7 +55,7 @@ module Transformer_TorchSharp4 =
         let headDim = dModel / nHeads
         let kvHeads = nHeads / 4L |> max 1L
 
-        //**********************LoRa**********************
+        //**********************LoRA**********************
         let mkLinear (inF, outF) =
             match useLora with
             | true  -> new LoRALinear(inF, outF, rank = 4L, alpha = 32.0f, device = device) :> torch.nn.Module<torch.Tensor, torch.Tensor>
@@ -302,8 +302,7 @@ module Transformer_TorchSharp4 =
 
                 let perplexity = torch.exp(loss).item<float32>() 
 
-                try     
-                   
+                try   
                     loss.backward() //computes loss
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> //Gradient clipping limits the combined size (norm) of all parameter gradients to 1.0
                 with
@@ -385,8 +384,7 @@ module Transformer_TorchSharp4 =
                         -> 
                         torch.multinomial(probs, 1).item<int64>()
 
-                    | _, 0.0f 
-
+                    | _, 0.0f
                         ->
                         torch.multinomial(probs, 1).item<int64>()
 
@@ -447,7 +445,7 @@ module Transformer_TorchSharp4 =
         // * weights, biases, potentially learned positional encodings, layer normalization parameters
         printfn "Starting pre-training..."
 
-        let useLora = false // Better to pre-train the model with useLora = false
+        let useLora = false // Probably better to pre-train the model with useLora = false TODO verify this claim
         //let useLora = true  
 
         use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device, useLora)).``to``(device)
@@ -495,6 +493,7 @@ module Transformer_TorchSharp4 =
         //Uncomment for fine-tuning without LoRA        
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         (*
+        //Uncomment for fine-tuning with LoRA 
         use fineTuneOptimizer = //this optimizer is only updating LoRA parameters.
             torch.optim.Adam(
                 model.named_parameters()
@@ -515,6 +514,7 @@ module Transformer_TorchSharp4 =
             |> Seq.filter (fun p1 -> p1.requires_grad)
             |> Seq.map (fun p2 -> p2.grad.norm())
             |> Seq.reduce (fun acc norm -> acc + norm)
+
         printfn "Gradient norm: %.4f" (gradNorm.item<float32>())
 
         //save_LoRA_adapters model @"g:\LoRA\"

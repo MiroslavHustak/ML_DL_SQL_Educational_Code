@@ -68,7 +68,7 @@ module LoRa =
                 match System.IO.File.Exists(filePath) with
                 | true  ->   
                         let loaded = torch.load(filePath)
-                        param.copy_(loaded) |> ignore //Take the existing param tensor in the model, and copy all values from loaded into it.
+                        param.copy_(loaded) |> ignore<torch.Tensor> //Side effect: model updating
                 | false ->
                         printfn "File not found: %s" filePath
             )
