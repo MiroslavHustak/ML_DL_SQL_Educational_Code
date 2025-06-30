@@ -32,8 +32,9 @@ module Transformer_TorchSharp4 =
 
     //*************************************************************  
     // MODEL ARCHITECTURE DEFINITION SECTION
-    // Enhanced GPT-2-like architecture (decoder-only Transformer with RoPE and RMSNorm)
-    // Does not include FlashAttention, fused ops, production-grade tokenizer, checkpointing, LoRA, or quantisation
+    // Decoder-only Transformer based on GPT-2-like architecture enhanced with RoPE, RMSNorm, learning rate scheduler, and LoRA
+    // Does not include FlashAttention, fused ops, production-grade tokenizer, checkpointing, or quantisation
+    // Learning rate scheduler commented out for performance reasons
     //*************************************************************
         
     type private RMSNorm(normalizedShape: int64[], eps: float32) as self =
@@ -479,7 +480,7 @@ module Transformer_TorchSharp4 =
                     match name.EndsWith(".A") || name.EndsWith(".B") with
                     | true  -> () //printfn "Trainable: %s" name
                     | false -> param.requires_grad <- false
-            )
+                )
 
         // Freeze all base (= pre-trained and fine-tuned) model weights; only LoRA weights (A and B) will be updated during fine-tuning
         match useLora with
