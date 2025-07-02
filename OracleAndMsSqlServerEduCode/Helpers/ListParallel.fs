@@ -14,4 +14,3 @@ let map (action : 'a -> 'b) (list : 'a list) =
          |> Async.Parallel  
          |> Async.RunSynchronously  
          |> List.ofArray
-

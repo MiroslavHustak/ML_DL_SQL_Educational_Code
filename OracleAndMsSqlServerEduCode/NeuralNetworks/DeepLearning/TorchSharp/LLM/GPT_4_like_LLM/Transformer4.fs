@@ -56,7 +56,7 @@ module Transformer_TorchSharp4 =
         let headDim = dModel / nHeads
         let kvHeads = nHeads / 4L |> max 1L
 
-        //**********************LoRA**********************
+        //********************** LoRA **********************
         let mkLinear (inF, outF) =
             match useLora with
             | true  -> new LoRALinear(inF, outF, rank = 4L, alpha = 32.0f, device = device) :> torch.nn.Module<torch.Tensor, torch.Tensor>

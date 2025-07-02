@@ -17,9 +17,10 @@
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT-2-like_LLM\Transformer2.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT_4_like_LLM\LoRA.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT_4_like_LLM\Transformer4.fs" />
-    <Content Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\Notes.txt" />
-    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\TransformerEducation2.fs" />
-    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\TransformerEducation1.fs" />
+    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-4-like LLM\TransformerEducation4.fs" />
+    <Content Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-2-like LLM\Notes.txt" />
+    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-2-like LLM\TransformerEducation2.fs" />
+    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-2-like LLM\TransformerEducation1.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\TorchSharpEducation.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\Synapses\MultipleHiddenLayerMLP.fs" />
     <Compile Include="NeuralNetworks\ShallowLearning\MLNET\SingleLayerPerceptron.fs" />

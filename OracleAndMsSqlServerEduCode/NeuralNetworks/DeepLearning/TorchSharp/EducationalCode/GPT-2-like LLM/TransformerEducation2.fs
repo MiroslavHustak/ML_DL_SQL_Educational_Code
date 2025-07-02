@@ -11,22 +11,6 @@ open type torch.nn.functional
 open Settings
 
 module Transformer_TorchSharp =
-
-    //*******************************************************************
-    (*
-    This code is still under development and is intended for educational purposes only.
-    Submitting issues and pull requests is welcome.
-
-    Option and Result types have not been applied yet.
-    Separation of data and data manipulation not fully implemented yet.
-    Disposals not fully implemented yet.
-    The code architecture will be figured out later.
-    
-    Acknowledgments:
-    - A lecture on creating an LLM with TorchSharp by Tomáš Herceg (https://www.youtube.com/watch?v=tW5RiP765hw&t=12s).
-    - Sebastian Raschka, "Build a Large Language Model (From Scratch)".
-    *)
-    //*******************************************************************
         
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32) as self =
 
