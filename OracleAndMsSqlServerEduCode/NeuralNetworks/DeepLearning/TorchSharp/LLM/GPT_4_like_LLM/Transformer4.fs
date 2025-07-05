@@ -9,6 +9,7 @@ open type torch.nn
 open type torch.nn.functional
 
 open LoRA 
+open RMSNorm
 open Settings
 
 //*******************************************************************
@@ -36,18 +37,6 @@ module Transformer_TorchSharp4 =
     // Does not include FlashAttention, fused ops, production-grade tokenizer, checkpointing, or quantisation
     // Learning rate scheduler commented out for performance reasons
     //*************************************************************
-        
-    type private RMSNorm(normalizedShape: int64[], eps: float32) as self =
-
-        inherit Module<torch.Tensor, torch.Tensor>("RMSNorm")
-
-        let weight = torch.nn.Parameter(torch.ones normalizedShape)
-        let eps = torch.tensor eps
-        do self.RegisterComponents()
-
-        override _.forward (x: torch.Tensor) =
-            use norm = x.pow(torch.tensor(2.0f)).mean([|-1L|], keepdim = true).add(eps).sqrt() 
-            x / norm * weight
 
     type private TransformerDecoderLayer(dModel: int64, nHeads: int64, dropoutRate: float32, device: torch.Device, useLora: bool) as self =
 
@@ -70,7 +59,7 @@ module Transformer_TorchSharp4 =
               
         let feedForward1 = Linear(dModel, dModel * 4L)
         let feedForward2 = Linear(dModel * 4L, dModel)
-        let layerNorm1 = new RMSNorm([|dModel|], 1e-5f)
+        let layerNorm1 = new RMSNorm([|dModel|], 1e-5f) // Root Mean Square Layer Normalization
         let layerNorm2 = new RMSNorm([|dModel|], 1e-5f)
         let dropout = Dropout(float dropoutRate)      
 
@@ -180,42 +169,26 @@ module Transformer_TorchSharp4 =
                     use mask : torch.Tensor = torch.triu(torch.ones([|seq; seq|], device = attentionScores.device), diagonal = 1L).to_type(torch.ScalarType.Bool)
                     use maskedScores = attentionScoresWithBias.masked_fill(mask.unsqueeze(0).unsqueeze(0), System.Single.NegativeInfinity)
                     use attentionWeights = softmax(maskedScores, -1L) |> dropout.forward
-                       
-                    let result = 
-                        [
-                            (fun () -> torch.matmul(attentionWeights, v).transpose(1, 2).contiguous().view(batch, seq, dModel) |> outputProjection.forward)
-                            (fun () -> normedInput |> layerNorm2.forward |> feedForward1.forward |> gelu |> feedForward2.forward |> dropout.forward)
-                        ]
-                        |> List.Parallel.map (fun f -> f())
-
-                    use attnResult = result |> List.head
-                    use ffnResult = result |> List.last 
-                   
-                    (*
-                    let attnTask = 
-                        Task.Run
-                            (fun _
-                                -> torch.matmul(attentionWeights, v).transpose(1, 2).contiguous().view(batch, seq, dModel) |> outputProjection.forward
-                            )
-
-                    let ffnTask = 
-                        Task.Run
-                            (fun _
-                                -> normedInput |> layerNorm2.forward |> feedForward1.forward |> gelu |> feedForward2.forward |> dropout.forward
-                            )
-
-                    Task.WaitAll([| attnTask :> Task; ffnTask :> Task |])
-
-                    use attnResult = attnTask.Result
-                    use ffnResult = ffnTask.Result
-                     *)
-
-                    //Skip (residual) connections with scaling - prevent exploding activations in very deep networks (not used in my GPT-2-like model)
-                    use residualScale = 1.0f / float32 (2 * numLayers) |> torch.tensor
-
+                                     
+                    use attnOutput = torch.matmul(attentionWeights, v).transpose(1, 2).contiguous().view(batch, seq, dModel)
+                    use attnResult = outputProjection.forward attnOutput
+                    
+                    // First residual connection
+                    use residualScale = torch.tensor(1.0f / float32 (2 * numLayers), device = x.device) 
                     use out1 = x + attnResult * residualScale //The first skip (residual) connection after multi-head attention
+                    
+                    // FFN block: Use normalized attention output
+                    use ffnInput = layerNorm2.forward out1
 
-                    out1 + ffnResult * residualScale //The second residual connection after feed-forward network
+                    use ffnResult = 
+                        ffnInput 
+                        |> feedForward1.forward 
+                        |> gelu 
+                        |> feedForward2.forward
+                        |> dropout.forward
+                    
+                    // The second residual connection after feed-forward network
+                    out1 + ffnResult * residualScale
 
             | shapeArr -> failwithf "Invalid input shape: %A" shapeArr
 

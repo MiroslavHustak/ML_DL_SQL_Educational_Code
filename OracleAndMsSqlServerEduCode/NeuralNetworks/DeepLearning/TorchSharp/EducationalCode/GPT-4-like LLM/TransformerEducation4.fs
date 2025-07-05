@@ -11,7 +11,7 @@ open type torch.nn.functional
 open LoRA 
 open Settings
 
-module Transformer_TorchSharp4 =
+module Educational_Code_Transformer_TorchSharp4 =
 
     // Defines a custom RMSNorm module for layer normalization, used to stabilize training by normalizing activations.
     type private RMSNorm(normalizedShape: int64[], eps: float32) as self =
