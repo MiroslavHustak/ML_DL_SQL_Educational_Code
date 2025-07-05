@@ -49,19 +49,19 @@ module Transformer_TorchSharp4 =
         let mkLinear (inF, outF) =
             match useLora with
             | true  -> new LoRALinear(inF, outF, rank = 4L, alpha = 32.0f, device = device) :> torch.nn.Module<torch.Tensor, torch.Tensor>
-            | false -> Linear(inF, outF) :> torch.nn.Module<torch.Tensor, torch.Tensor>
+            | false -> Linear(inF, outF).``to``(device) :> torch.nn.Module<torch.Tensor, torch.Tensor>
 
         let qProjection = mkLinear(dModel, dModel)
         let kProjection = mkLinear(dModel, kvHeads * headDim)
         let vProjection = mkLinear(dModel, kvHeads * headDim)
         
-        let outputProjection = mkLinear(dModel, dModel)
-              
-        let feedForward1 = Linear(dModel, dModel * 4L)
-        let feedForward2 = Linear(dModel * 4L, dModel)
-        let layerNorm1 = new RMSNorm([|dModel|], 1e-5f) // Root Mean Square Layer Normalization
-        let layerNorm2 = new RMSNorm([|dModel|], 1e-5f)
-        let dropout = Dropout(float dropoutRate)      
+        let outputProjection = mkLinear(dModel, dModel)        
+        
+        let feedForward1 = Linear(dModel, dModel * 4L).``to``(device)
+        let feedForward2 = Linear(dModel * 4L, dModel).``to``(device)
+        let layerNorm1 = (new RMSNorm([|dModel|], 1e-5f)).``to``(device) // Root Mean Square Layer Normalization
+        let layerNorm2 = (new RMSNorm([|dModel|], 1e-5f)).``to``(device)
+        let dropout = Dropout(float dropoutRate).``to``(device)
 
         do self.RegisterComponents()
 
@@ -75,13 +75,25 @@ module Transformer_TorchSharp4 =
                 match lastDim % 2L <> 0L with true -> failwithf "The last dimension (%d) is not even, cannot apply rotary split." lastDim | false -> ()
             
                 let dim = lastDim / 2L
-            
-                use theta = torch.pow(10000.0f, torch.arange(0L, dim, device=q.device, dtype=torch.float32) / float32 dim)
+
+                // ensure RoPE matches q's device and dtype
+                let qDtype = q.dtype
+                let qDevice = q.device
+                
+                use theta = 
+                    torch.pow(
+                        torch.tensor(10000.0, dtype=qDtype, device=qDevice),
+                        torch.arange(0L, dim, dtype=qDtype, device=qDevice) / float32 dim
+                    )
+                
                 let seqLen = q.shape.[q.shape.Length - 2]
-                use positionIds = torch.arange(seqLen, device=q.device, dtype=torch.float32).unsqueeze(-1)
+                
+                use positionIds = 
+                    torch.arange(seqLen, dtype=qDtype, device=qDevice).unsqueeze(-1)
+                
                 use freqs = positionIds / theta
                 use sin = torch.sin freqs
-                use cos = torch.cos freqs
+                use cos = torch.cos freqs  
     
                 let reshapeForRotation (x: torch.Tensor) =
 
@@ -118,10 +130,10 @@ module Transformer_TorchSharp4 =
                             //TODO: VERIFY THIS CODE WITH GPUs
                             let q = qProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; nHeads; headDim|]).transpose(1, 2)
                             let k = kProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
-                            let v = vProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)
-                            let q = q.cuda()
-                            let k = k.cuda()
-                            let v = v.cuda()
+                            let v = vProjection.forward(normedInput.view([|batch * seq; dModel|])).view([|batch; seq; kvHeads; headDim|]).transpose(1, 2)                            
+                            let q = q.``to``(device)
+                            let k = k.``to``(device)
+                            let v = v.``to``(device)
                             let qkv = torch.cat([| q; k; v |], dim=2L) 
 
                             [
@@ -195,22 +207,23 @@ module Transformer_TorchSharp4 =
     type private Transformer(vocabSize: int64, dModel: int64, nHeads: int64, numLayers: int, device: torch.Device, useLora: bool) as self =
 
         inherit Module<torch.Tensor, torch.Tensor>("Transformer")
-
-        let embedding = Embedding(vocabSize, dModel)
-        let dropout = Dropout(float dropoutRate)
+        
+        let embedding = Embedding(vocabSize, dModel).``to``(device)
+        let dropout = Dropout(float dropoutRate).``to``(device)
 
         let decoderLayers =
             List.init numLayers (fun _ -> new TransformerDecoderLayer(dModel, nHeads, dropoutRate, device, useLora) :> torch.nn.Module<torch.Tensor, torch.Tensor>)
             |> List.toArray
             |> ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>
 
-        let outputLayer = Linear(dModel, vocabSize)
-        let norm = new RMSNorm([|dModel|], 1e-5f)
-
+        let outputLayer = Linear(dModel, vocabSize).``to``(device)
+        let norm = (new RMSNorm([|dModel|], 1e-5f)).``to``(device)
+      
         do outputLayer.weight <- embedding.weight
 
         do self.RegisterComponents()
 
+        //must be ensured that the input tensor x is also on the same device, otherwise I'll get a device mismatch error.
         override _.forward x =
 
             use emb = embedding.forward x
@@ -252,7 +265,7 @@ module Transformer_TorchSharp4 =
         |> List.iter
             (fun epoch 
                 ->
-                let counter = (+) epoch 1
+                let counter = (+) 1
 
                 let baseLr = 5e-4f //5 * 10^-4  //adapt
                 let warmupSteps = 10  //adapt
@@ -283,7 +296,7 @@ module Transformer_TorchSharp4 =
                 | :? System.StackOverflowException 
                     as ex 
                     ->
-                    printfn "StackOverflowException in %s, epoch %d: %s" phase counter (string ex.Message)
+                    printfn "StackOverflowException in %s, epoch %d: %s" phase (counter epoch) (string ex.Message)
                 | ex
                     ->
                     printfn "%s" (string ex.Message)
@@ -291,8 +304,8 @@ module Transformer_TorchSharp4 =
                 //model change happens explicitly in optimizer.step() - changed model is the result of trainEpoch (this side effect is a nightmare for a functional programmer)   
                 optimizer.step() |> ignore<torch.Tensor>   //update parameters based on gradients (Adam is actually run here)            
         
-                match counter % 20 with
-                | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase counter (loss.item<float32>()) perplexity
+                match (counter epoch) % 20 with
+                | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase (counter epoch) (loss.item<float32>()) perplexity
                 | _ -> ()
             )                    
 
@@ -501,15 +514,14 @@ module Transformer_TorchSharp4 =
         printfn "Generating sequence after fine-tuning..."
 
         model.load("model4.pt") |> ignore<torch.nn.Module>
+        model.``to``(device) |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
                            
         let promptContent = "What is the colour of the sky? <sep>"
         let promptTokens = Tokenizer2.tokenize promptContent |> List.toArray
 
-        model.``to``("cpu") |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
-
         model.eval() //Configures model to evaluation mode for sequence generation 
 
-        use inputSeq = torch.tensor(promptTokens, device = torch.CPU).unsqueeze 0L
+        use inputSeq = torch.tensor(promptTokens, device = device).unsqueeze 0L
         
         //Generating the output sequence       
         let generated = generateSeq model inputSeq initialStep acc id

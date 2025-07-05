@@ -12,21 +12,23 @@ module LoRA =
 
         inherit Module<torch.Tensor, torch.Tensor>("LoRALinear")
     
-        // Main weights
+        // Main weights (allocated on specified device)
         let weight = torch.empty([| outFeatures; inFeatures |], device = device).AsParameter()
         let bias = torch.zeros(outFeatures, device = device).AsParameter()
-    
-        // LoRA weights (A: random small init, B: zeros, per LoRA paper suggestion)
+            
+        // LoRA weights (A: random small init, B: zeros, per LoRA paper, allocated on specified device)
         let A : Modules.Parameter = (torch.randn([| rank; inFeatures |], device = device) * 0.01f).AsParameter()
         let B : Modules.Parameter = torch.zeros([| outFeatures; rank |], device = device).AsParameter()
     
         let scaling = alpha / (Microsoft.FSharp.Core.Operators.float32 rank)
+        let scalingTensor = torch.tensor(scaling, dtype = torch.float32, device = device).AsParameter()
     
         do
             this.register_parameter("weight", weight) |> ignore
             this.register_parameter("bias", bias) |> ignore
             this.register_parameter("A", A) |> ignore
             this.register_parameter("B", B) |> ignore
+            this.register_parameter("scaling", scalingTensor) |> ignore
 
             A.requires_grad <- true
             B.requires_grad <- true
@@ -36,9 +38,10 @@ module LoRA =
             // LoRA: A is already initialized above, B is already zeros    
             
         override this.forward(input: torch.Tensor) =
+
            let projA = input.matmul(A.transpose(0L, 1L)) // [batch, rank]
            let projB = projA.matmul(B.transpose(0L, 1L)) // [batch, outF]
-           let scaled = projB.mul(torch.tensor(scaling, dtype=input.dtype, device=input.device))
+           let scaled = projB.mul(scalingTensor.to_type(input.dtype))
        
            input.matmul(weight.transpose(0L, 1L)).add(scaled).add(bias)
 
