@@ -1,8 +1,8 @@
 ﻿namespace NeuralNetworks
 
-//******************************************************************************
-// Texts simulating the text for model training (calculating weights and biases)  
-//******************************************************************************
+//*********************************************
+// Texts simulating dataset for model training  
+//*********************************************
 
 open Settings
 

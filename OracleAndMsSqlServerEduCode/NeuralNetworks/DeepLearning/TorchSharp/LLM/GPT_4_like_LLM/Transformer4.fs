@@ -59,8 +59,8 @@ module Transformer_TorchSharp4 =
         
         let feedForward1 = Linear(dModel, dModel * 4L).``to``(device)
         let feedForward2 = Linear(dModel * 4L, dModel).``to``(device)
-        let layerNorm1 = (new RMSNorm([|dModel|], 1e-5f)).``to``(device) // Root Mean Square Layer Normalization
-        let layerNorm2 = (new RMSNorm([|dModel|], 1e-5f)).``to``(device)
+        let layerNorm1 = new RMSNorm([|dModel|], 1e-5f, device = device) // Root Mean Square Layer Normalization
+        let layerNorm2 = new RMSNorm([|dModel|], 1e-5f, device = device)
         let dropout = Dropout(float dropoutRate).``to``(device)
 
         do self.RegisterComponents()
@@ -82,14 +82,14 @@ module Transformer_TorchSharp4 =
                 
                 use theta = 
                     torch.pow(
-                        torch.tensor(10000.0, dtype=qDtype, device=qDevice),
-                        torch.arange(0L, dim, dtype=qDtype, device=qDevice) / float32 dim
+                        torch.tensor(10000.0, dtype = qDtype, device = qDevice),
+                        torch.arange(0L, dim, dtype = qDtype, device = qDevice) / float32 dim
                     )
                 
                 let seqLen = q.shape.[q.shape.Length - 2]
                 
                 use positionIds = 
-                    torch.arange(seqLen, dtype=qDtype, device=qDevice).unsqueeze(-1)
+                    torch.arange(seqLen, dtype = qDtype, device = qDevice).unsqueeze(-1)
                 
                 use freqs = positionIds / theta
                 use sin = torch.sin freqs
@@ -134,7 +134,7 @@ module Transformer_TorchSharp4 =
                             let q = q.``to``(device)
                             let k = k.``to``(device)
                             let v = v.``to``(device)
-                            let qkv = torch.cat([| q; k; v |], dim=2L) 
+                            let qkv = torch.cat([|q; k; v|], dim=2L) 
 
                             [
                                 qkv.slice(1L, 0L, int64 nHeads, headDim)  // q: [batch, nHeads, seq, headDim]
@@ -217,7 +217,7 @@ module Transformer_TorchSharp4 =
             |> ModuleList<torch.nn.Module<torch.Tensor, torch.Tensor>>
 
         let outputLayer = Linear(dModel, vocabSize).``to``(device)
-        let norm = (new RMSNorm([|dModel|], 1e-5f)).``to``(device)
+        let norm = new RMSNorm([|dModel|], 1e-5f, device = device)
       
         do outputLayer.weight <- embedding.weight
 
@@ -436,7 +436,7 @@ module Transformer_TorchSharp4 =
         //let useLora = true  
 
         use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device, useLora)).``to``(device)
-        use lossFn = new CrossEntropyLoss(ignore_index = padTokenIdx)
+        use lossFn = new CrossEntropyLoss (ignore_index = padTokenIdx)
 
         //Uncomment for pre-training
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm //just configuration

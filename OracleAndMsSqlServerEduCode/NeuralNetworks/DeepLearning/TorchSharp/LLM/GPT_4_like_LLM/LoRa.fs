@@ -24,17 +24,17 @@ module LoRA =
         let scalingTensor = torch.tensor(scaling, dtype = torch.float32, device = device).AsParameter()
     
         do
-            this.register_parameter("weight", weight) |> ignore
-            this.register_parameter("bias", bias) |> ignore
-            this.register_parameter("A", A) |> ignore
-            this.register_parameter("B", B) |> ignore
-            this.register_parameter("scaling", scalingTensor) |> ignore
+            this.register_parameter("weight", weight) |> ignore<unit>
+            this.register_parameter("bias", bias) |> ignore<unit>
+            this.register_parameter("A", A) |> ignore<unit>
+            this.register_parameter("B", B) |> ignore<unit>
+            this.register_parameter("scaling", scalingTensor) |> ignore<unit>
 
             A.requires_grad <- true
             B.requires_grad <- true
 
-            init.kaiming_uniform_(weight) |> ignore
-            init.zeros_(bias) |> ignore
+            init.kaiming_uniform_(weight) |> ignore<torch.Tensor>
+            init.zeros_(bias) |> ignore<torch.Tensor>
             // LoRA: A is already initialized above, B is already zeros    
             
         override this.forward(input: torch.Tensor) =
