@@ -135,10 +135,10 @@ module Program =
 
     printfn "%s" <| String.replicate 50 "*"
     printfn "Enhanced GPT-2 with GPT-3 and GPT-4-like features" 
-    NeuralNetworks.Transformer_TorchSharp4.main()
+    NeuralNetworks.Transformer_TorchSharp4Batch.main()
     printfn "%s" <| String.replicate 50 "*"
     printfn "GPT-2" 
-    NeuralNetworks.Transformer_TorchSharp2.main()
+    //NeuralNetworks.Transformer_TorchSharp2.main()
 
     (*
     [1 .. 1000]

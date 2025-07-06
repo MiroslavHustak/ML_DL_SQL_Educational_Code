@@ -37,12 +37,13 @@ module Settings =
     let internal eosTokenIdx = vocabulary |> List.findIndex ((=) "<eos>") |> int64
     let internal padTokenIdx = vocabulary |> List.findIndex ((=) "<pad>") |> int64
 
-    let internal batch = 32L  //not used yet
-
     let [<Literal>] internal dModel = 48L //  Embeddings of size 48
-    let [<Literal>] internal epochs = 240  
-    let [<Literal>] internal fineTuneEpochs = 60
-    let [<Literal>] internal fineTuneBatch = 10L //not used yet
+    let [<Literal>] internal epochs = 80 //240  
+    let [<Literal>] internal trainingBatch = 32L 
+
+    let [<Literal>] internal fineTuneEpochs = 20 //60
+    let [<Literal>] internal fineTuneBatch = 10L 
+
     let [<Literal>] internal nHeads = 4L   
     let [<Literal>] internal numLayers = 4 //number of transformer decoder layers
     let [<Literal>] internal dropoutRate = 0.01f

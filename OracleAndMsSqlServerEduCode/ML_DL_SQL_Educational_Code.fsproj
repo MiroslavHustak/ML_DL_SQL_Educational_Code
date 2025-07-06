@@ -18,6 +18,7 @@
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT_4_like_LLM\RMSNorm.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT_4_like_LLM\LoRA.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT_4_like_LLM\Transformer4.fs" />
+    <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT_4_like_LLM\Transformer4Batch.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-4-like LLM\TransformerEducation4.fs" />
     <Content Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-2-like LLM\Notes.txt" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-2-like LLM\TransformerEducation2.fs" />
