@@ -310,10 +310,10 @@ module Transformer_TorchSharp4Batch =
                             loss.backward() // Compute gradients
                             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> // Gradient clipping
                         with
-                        | :? System.StackOverflowException as ex ->
+                        | :? System.StackOverflowException as ex
+                            ->
                             printfn "StackOverflowException in %s, epoch %d, batch %d: %s" phase (counter epoch) (batchIdx + 1L) (string ex.Message)
-                        | ex ->
-                            printfn "%s" (string ex.Message)
+                        | ex -> printfn "%s" (string ex.Message)
 
                         optimizer.step() |> ignore<torch.Tensor> // Update parameters
 
@@ -476,7 +476,8 @@ module Transformer_TorchSharp4Batch =
         let freezeBaseWeights (model: torch.nn.Module) =
             model.named_parameters()
             |> Seq.iter
-                (fun struct (name, param) ->
+                (fun struct (name, param) 
+                    ->
                     match name.EndsWith(".A") || name.EndsWith(".B") with
                     | true  -> ()
                     | false -> param.requires_grad <- false
@@ -524,7 +525,8 @@ module Transformer_TorchSharp4Batch =
         printf "Generated sequence (words): "
         generated 
         |> List.iter
-            (fun id ->
+            (fun id 
+                ->
                 match id >= 0L && id < int64 vocabulary.Length with
                 | true  -> printf "%s " (vocabulary |> List.item (int id))
                 | false -> printf "<unk> "
