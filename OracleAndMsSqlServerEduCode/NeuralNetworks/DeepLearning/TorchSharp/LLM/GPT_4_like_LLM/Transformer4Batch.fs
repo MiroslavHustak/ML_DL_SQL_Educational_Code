@@ -11,6 +11,7 @@ open type torch.nn.functional
 open LoRA 
 open RMSNorm
 open Settings
+open Checkpointing
 
 //*******************************************************************
 // GPT-2 in architecture (not in scale) without calling external tools 
@@ -242,7 +243,7 @@ module Transformer_TorchSharp4Batch =
     //*************************************************************
 
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
-                       (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs (phase: string) batchSize =
+                       (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs (phase: string) batchSize saveCkpt =
 
         // Learning rate scheduler (includes warmup and cosine decay)
         let learningRateSchedule (warmupSteps: int) (totalSteps: int) (baseLr: float32) (step: int) : float32 =
@@ -330,6 +331,8 @@ module Transformer_TorchSharp4Batch =
                         | _ 
                             ->
                             ()
+
+                        //saveCkpt epoch  //to be uncommented if checkpointing is needed                   
                     )
             )     
 
@@ -461,12 +464,23 @@ module Transformer_TorchSharp4Batch =
         use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device, useLora)).``to``(device)
         use lossFn = new CrossEntropyLoss (ignore_index = padTokenIdx)
     
-        // Pre-training
+        // PRE-TRAINING
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         model.train()
-        trainEpoch model optimizer lossFn input target epochs "Pre-training" trainingBatch // Use batch = 32L
+
+        // Checkpointing  //currently deactivated
+        let ckptFreq = 10
+        let pretrainCheckpointDir = "checkpoints/pretrain"
+        
+        let saveCkpt epoch =
+            match (epoch + 1) % ckptFreq with
+            | 0 -> saveCheckpoint model (epoch + 1) "pretrain" pretrainCheckpointDir
+            | _ -> ()
+                
+        // PRE-TRAINING (continued) 
+        trainEpoch model optimizer lossFn input target epochs "Pre-training" trainingBatch saveCkpt 
     
-        model.save("model4.pt") |> ignore<torch.nn.Module>
+        //model.save("model4.pt") |> ignore<torch.nn.Module>
         
         // FINE-TUNING
         printfn "Starting fine-tuning..."
@@ -492,8 +506,20 @@ module Transformer_TorchSharp4Batch =
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
     
         use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
+        
         model.train()
-        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning" fineTuneBatch // Use fineTuneBatch = 10L
+
+        // Checkpointing  //currently deactivated
+        let ftCkptFreq = 5
+        let ftCheckpointDir = "checkpoints/finetune"
+        
+        let saveFtCkpt epoch =
+            match (epoch + 1) % ftCkptFreq with
+            | 0 -> saveCheckpoint model (epoch + 1) "finetune" ftCheckpointDir
+            | _ -> ()
+       
+        // FINE-TUNING (continued) 
+        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning" fineTuneBatch saveCkpt 
     
         let gradNorm = 
             model.parameters()
@@ -502,18 +528,29 @@ module Transformer_TorchSharp4Batch =
             |> Seq.reduce (fun acc norm -> acc + norm)
     
         printfn "Gradient norm: %.4f" (gradNorm.item<float32>())
+
+        (*
+        printfn "Generating sequence after fine-tuning..."
+        // Load the final fine-tuning checkpoint for inference      
+        let infWeightsPath = Path.Combine(ftCheckpointDir, sprintf "finetune_model_epoch_%d.pt" fineTuneEpochs)
+        let infEpochPath = Path.Combine(ftCheckpointDir, sprintf "finetune_epoch_%d.txt" fineTuneEpochs)
+        loadCheckpoint model infWeightsPath infEpochPath |> ignore<int>
     
-        model.save("model4.pt") |> ignore<torch.nn.Module>
+        saveCheckpoint model fineTuneEpochs "finetune" ftCheckpointDir
+        *)
+
+        //model.save("model4.pt") |> ignore<torch.nn.Module>
     
         // INFERENCE
         printfn "Generating sequence after fine-tuning..."
-        model.load("model4.pt") |> ignore<torch.nn.Module>
+        //model.load("model4.pt") |> ignore<torch.nn.Module>
         model.``to``(device) |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
                            
         let promptContent = "What is the colour of the sky? <sep>"
         let promptTokens = Tokenizer2.tokenize promptContent |> List.toArray
     
         model.eval()
+
         use inputSeq = torch.tensor(promptTokens, device = device).unsqueeze 0L
         
         let generated = generateSeq model inputSeq initialStep acc id
