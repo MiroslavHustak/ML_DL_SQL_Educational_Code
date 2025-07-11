@@ -1,4 +1,4 @@
-﻿namespace NeuralNetworks //237
+﻿namespace NeuralNetworks2 //237
 
 open System
 open System.Threading.Tasks
@@ -9,7 +9,7 @@ open TorchSharp.Modules
 open type torch.nn
 open type torch.nn.functional
 
-open Settings
+open Settings2
 
 //*******************************************************************
 // GPT-2
@@ -332,7 +332,7 @@ module Transformer_TorchSharp2 =
         let dataset = TextData2.getSequences()
 
         // TOKENIZER
-        let (inputData, targetData) = Tokenizer2.createInputTargetPairs dataset
+        let (inputData, targetData) = Tokenizer22.createInputTargetPairs dataset
         use input = torch.tensor(inputData, device = device)
         use target = torch.tensor(targetData, device = device)
 
@@ -365,14 +365,14 @@ module Transformer_TorchSharp2 =
         trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
 
         //Uncomment for saving weights and biases
-        model.save("model2.pt") |> ignore<torch.nn.Module>
-        model.load("model2.pt") |> ignore<torch.nn.Module>
+        //model.save("model2.pt") |> ignore<torch.nn.Module>
+        //model.load("model2.pt") |> ignore<torch.nn.Module>
 
         // INFERENCE
         printfn "Generating sequence after fine-tuning..."
                
-        let promptContent = "What is the colour of the Sun? <sep>"
-        let promptTokens = Tokenizer2.tokenize promptContent |> List.toArray
+        let promptContent = prompt
+        let promptTokens = Tokenizer22.tokenize promptContent |> List.toArray
 
         model.``to``("cpu") |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
 

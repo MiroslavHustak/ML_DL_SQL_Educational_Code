@@ -1,4 +1,4 @@
-﻿namespace NeuralNetworks
+﻿namespace NeuralNetworks2
 
 open System
 
@@ -8,7 +8,7 @@ open TorchSharp.Modules
 open type torch.nn
 open type torch.nn.functional
 
-open Settings
+open Settings2
 
 module Transformer_TorchSharp =
         
@@ -282,7 +282,7 @@ module Transformer_TorchSharp =
                 
                 match nextToken with
                 | tok 
-                    when tok = Settings.eosTokenIdx || tok = Settings.padTokenIdx 
+                    when tok = Settings2.eosTokenIdx || tok = Settings2.padTokenIdx 
                         ->
                         List.rev (nextToken::acc)
                 | _ 
@@ -302,7 +302,7 @@ module Transformer_TorchSharp =
         let dataset = TextData.getSequences()
         
         // CREATING INPUT-TARGET PAIRS FROM TEXT DATA USING A TOKENIZER
-        let (inputData, targetData) = Tokenizer.createInputTargetPairs dataset
+        let (inputData, targetData) = Tokenizer21.createInputTargetPairs dataset
         
         // LOADING INPUT FOR MODEL TRAINING
         use input = torch.tensor(inputData, device = device)

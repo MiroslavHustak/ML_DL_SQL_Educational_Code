@@ -132,13 +132,21 @@ module Program =
         printfn "Current time: %s" currentTime    
     
     printCurrentTime () 
-
     printfn "%s" <| String.replicate 50 "*"
-    printfn "Enhanced GPT-2 with GPT-3 and GPT-4-like features" 
+    printfn "!!!!!!!!!!!! LLMs have not been tested with GPUs !!!!!!!!!!!!"
+    printfn "%s" <| String.replicate 50 "*"
+    printfn "Prompt: %s" NeuralNetworks.Settings.prompt
+    printfn "%s" <| String.replicate 50 "*"
+    printfn "Enhanced GPT-2 with GPT-3 and GPT-4-like features with normal fine-tuning" 
     NeuralNetworks.Transformer_TorchSharp4Batch.main()
     printfn "%s" <| String.replicate 50 "*"
+    printfn "Enhanced GPT-2 with GPT-3 and GPT-4-like features with LoRA fine-tuning" 
+    NeuralNetworks.Transformer_TorchSharp4LoRA.main()
+    printfn "%s" <| String.replicate 50 "*"
+    printfn "Prompt: %s" NeuralNetworks2.Settings2.prompt
+    printfn "%s" <| String.replicate 50 "*"
     printfn "GPT-2" 
-    //NeuralNetworks.Transformer_TorchSharp2.main()
+    NeuralNetworks2.Transformer_TorchSharp2.main()
 
     (*
     [1 .. 1000]

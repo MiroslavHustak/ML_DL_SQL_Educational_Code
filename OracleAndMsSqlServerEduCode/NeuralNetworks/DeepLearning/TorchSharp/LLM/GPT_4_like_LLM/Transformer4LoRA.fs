@@ -1,4 +1,4 @@
-﻿namespace NeuralNetworks //275
+﻿namespace NeuralNetworks 
 
 open System
 
@@ -11,6 +11,7 @@ open type torch.nn.functional
 open LoRA 
 open RMSNorm
 open Settings
+open Checkpointing
 
 //*******************************************************************
 // GPT-2 in architecture (not in scale) without calling external tools 
@@ -29,7 +30,7 @@ open Settings
 // - Sebastian Raschka, "Build a Large Language Model (From Scratch)".
 //*******************************************************************
 
-module Transformer_TorchSharp4 =  
+module Transformer_TorchSharp4LoRA =  
 
     //*************************************************************  
     // MODEL ARCHITECTURE DEFINITION SECTION
@@ -70,7 +71,7 @@ module Transformer_TorchSharp4 =
             //Rotary Positional Embeddings
             let applyRotary (q: torch.Tensor) (k: torch.Tensor) : torch.Tensor * torch.Tensor =
 
-                let lastDim = q.shape.[q.shape.Length - 1]
+                let lastDim = Array.last q.shape //q.shape.[q.shape.Length - 1]
             
                 match lastDim % 2L <> 0L with true -> failwithf "The last dimension (%d) is not even, cannot apply rotary split." lastDim | false -> ()
             
@@ -85,8 +86,8 @@ module Transformer_TorchSharp4 =
                         torch.tensor(10000.0, dtype = qDtype, device = qDevice),
                         torch.arange(0L, dim, dtype = qDtype, device = qDevice) / float32 dim
                     )
-                
-                let seqLen = q.shape.[q.shape.Length - 2]
+               
+                let seqLen = q.shape |> Array.item (q.shape.Length - 2) 
                 
                 use positionIds = 
                     torch.arange(seqLen, dtype = qDtype, device = qDevice).unsqueeze(-1)
@@ -242,24 +243,24 @@ module Transformer_TorchSharp4 =
     //*************************************************************
 
     let private trainEpoch (model: torch.nn.Module<torch.Tensor, torch.Tensor>) (optimizer: torch.optim.Optimizer)
-                           (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs phase =
+                           (lossFn: CrossEntropyLoss) (input: torch.Tensor) (target: torch.Tensor) maxEpochs (phase: string) batchSize saveCkpt =
 
-        //Learning rate scheduler (includes warmup and cosine decay)  
+        // Learning rate scheduler (includes warmup and cosine decay)
         let learningRateSchedule (warmupSteps: int) (totalSteps: int) (baseLr: float32) (step: int) : float32 =
 
             match step with
-            | s when
-                s < warmupSteps
-                    ->
-                    float32 s / float32 warmupSteps * baseLr
-            | s when
-                s < totalSteps
-                    ->
-                    let progress = float32 (s - warmupSteps) / float32 (totalSteps - warmupSteps)
-                    baseLr * 0.5f * (1.0f + cos (MathF.PI * progress))
-            | _ 
-                    ->
-                    0.0f       
+            | s when s < warmupSteps 
+                ->
+                float32 s / float32 warmupSteps * baseLr
+            | s when s < totalSteps
+                ->
+                let progress = float32 (s - warmupSteps) / float32 (totalSteps - warmupSteps)
+                baseLr * 0.5f * (1.0f + cos (MathF.PI * progress))
+            | _ ->
+                0.0f
+
+        let nSamples = input.shape |> Array.head
+        let nBatches = (nSamples + batchSize - 1L) / batchSize // Ceiling division to handle partial batches
 
         [0 .. maxEpochs - 1]
         |> List.iter
@@ -267,47 +268,74 @@ module Transformer_TorchSharp4 =
                 ->
                 let counter = (+) 1
 
-                let baseLr = 5e-4f //5 * 10^-4  //adapt
-                let warmupSteps = 10  //adapt
+                (* // Uncomment for better hardware
+                let baseLr = 5e-4f // 5 * 10^-4
+                let warmupSteps = 10 // Adapt as needed
 
-                // Set learning rate dynamically based on schedule 
-                //let currentLr : float32 = learningRateSchedule warmupSteps maxEpochs baseLr epoch  //uncomment and use with a better PC than I possess
+                // Set learning rate dynamically based on schedule
+                let currentLr : float32 = learningRateSchedule warmupSteps maxEpochs baseLr epoch 
+                *)
 
                 let paramGroups = optimizer.ParamGroups
                 match paramGroups |> Seq.length > 0 with
                 | true  ->
-                        let paramGroup = paramGroups |> Seq.head 
-                        //paramGroup.LearningRate <- float currentLr  //uncomment and use with a better PC than I possess
-                        () //comment out if you use a better PC than me
+                        let paramGroup = paramGroups |> Seq.head
+                        // paramGroup.LearningRate <- float currentLr // Uncomment for better hardware
+                        () // Comment out if using learning rate scheduler
                 | false ->
                         failwith "No parameter groups found in optimizer"
 
-                optimizer.zero_grad() // Clears old gradients from the previous step before the next backward pass 
+                // Shuffle indices for each epoch to randomize batch order
+                let rnd = System.Random epoch
+                let indices = [|0L .. nSamples - 1L|] |> Array.sortBy (fun _ -> rnd.Next()) //batchInput
 
-                use output = model.forward input
-                use loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), target.contiguous().view(-1L)) //computes gradients
+                [0L .. nBatches - 1L]
+                |> List.iter 
+                    (fun batchIdx
+                        -> 
+                        // Compute batch indices
+                        let startIdx = batchIdx * batchSize
+                        let endIdx = min (startIdx + batchSize) nSamples
+                        let batchIndices = Array.sub indices (int startIdx) (int (endIdx - startIdx)) //indices.[int startIdx .. int (endIdx - 1L)]
 
-                let perplexity = torch.exp(loss).item<float32>() 
+                        // Select batch data
+                        use batchInput = input.index_select(0, torch.tensor(batchIndices, device = input.device))
+                        use batchTarget = target.index_select(0, torch.tensor(batchIndices, device = target.device))
 
-                try   
-                    loss.backward() //computes loss
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> //Gradient clipping limits the combined size (norm) of all parameter gradients to 1.0
-                with
-                | :? System.StackOverflowException 
-                    as ex 
-                    ->
-                    printfn "StackOverflowException in %s, epoch %d: %s" phase (counter epoch) (string ex.Message)
-                | ex
-                    ->
-                    printfn "%s" (string ex.Message)
+                        optimizer.zero_grad() // Clear gradients
+                        use output = model.forward batchInput
+                        use loss = lossFn.forward(output.contiguous().view(-1L, int64 vocabSize), batchTarget.contiguous().view(-1L))
+                        let perplexity = torch.exp(loss).item<float32>()
 
-                //model change happens explicitly in optimizer.step() - changed model is the result of trainEpoch (this side effect is a nightmare for a functional programmer)   
-                optimizer.step() |> ignore<torch.Tensor>   //update parameters based on gradients (Adam is actually run here)            
-        
-                match (counter epoch) % 20 with
-                | 0 -> printfn "%s Epoch %d, Loss: %.4f, Perplexity: %.4f" phase (counter epoch) (loss.item<float32>()) perplexity
-                | _ -> ()
-            )                    
+                        try
+                            loss.backward() // Compute gradients
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm = 1.0) |> ignore<float> // Gradient clipping
+                        with
+                        | :? System.StackOverflowException as ex
+                            ->
+                            printfn "StackOverflowException in %s, epoch %d, batch %d: %s" phase (counter epoch) (batchIdx + 1L) (string ex.Message)
+                        | ex -> 
+                            printfn "%s" (string ex.Message)
+
+                        optimizer.step() |> ignore<torch.Tensor> // Update parameters
+
+                        match (counter epoch) % 10 with
+                        | 0  
+                            ->
+                            printfn "%s Epoch %d, Batch %d/%d, Loss: %.4f, Perplexity: %.4f"
+                            <| phase
+                            <| counter epoch
+                            <| batchIdx + 1L 
+                            <| nBatches 
+                            <| loss.item<float32>() 
+                            <| perplexity
+                        | _ 
+                            ->
+                            ()
+
+                        //saveCkpt epoch  //to be uncommented if checkpointing is needed                   
+                    )
+            )     
 
     //*************************************************************         
     // INFERENCE SECTION
@@ -318,9 +346,11 @@ module Transformer_TorchSharp4 =
                                 (acc: int64 list) (cont: int64 list -> 'a) : 'a =
 
         let trimInput (input: torch.Tensor) =
+            
+            let z = input.shape |> Array.item 1
 
-            match input.shape.[1] > contextSize with
-            | true  -> input.narrow(1, int64 (int input.shape.[1] - int contextSize), contextSize)
+            match z > contextSize with
+            | true  -> input.narrow(1, int64 (int z - int contextSize), contextSize)
             | false -> input
 
         let sampleLogits (logits: torch.Tensor) =
@@ -355,11 +385,11 @@ module Transformer_TorchSharp4 =
                 use nonzero : torch.Tensor = torch.nonzero mask
             
                 let cutoff : int64 =
-                    match nonzero.shape.[0] with
-                    | 0L -> sortedProbs.shape.[0]  // Use all tokens
+                    match nonzero.shape |> Array.head with
+                    | 0L -> sortedProbs.shape |> Array.head  // Use all tokens
                     | _  -> nonzero.[0].item<int64>()
 
-                let cutoff = match cutoff with 0L -> sortedProbs.shape.[0] | _ -> cutoff
+                let cutoff = match cutoff with 0L -> sortedProbs.shape |> Array.head | _ -> cutoff
                 
                 use probsTopP = sortedProbs.narrow(0L, 0L, cutoff)
                 use indicesTopP = sortedIndices.narrow(0L, 0L, cutoff)
@@ -409,79 +439,85 @@ module Transformer_TorchSharp4 =
                         generateSeq model newInput (steps + 1) (nextToken :: acc) cont
 
     let internal main () =
-
-        //HELPERS
+    
+        // HELPERS
         use scope = torch.NewDisposeScope()
-
+    
         let device = 
             match torch.cuda.is_available() with
             | true  -> torch.CUDA
             | false -> torch.CPU
         
         printfn "Using device: %A" <| (string device).ToUpper()
-
+    
         // DATASET SIMULATION
         let dataset = TextData2.getSequences()
-
+    
         // TOKENIZER
         let (inputData, targetData) = Tokenizer2.createInputTargetPairs dataset
         use input = torch.tensor(inputData, device = device)
         use target = torch.tensor(targetData, device = device)
-
-        // GRADIENT-BASED PARAMETER* OPTIMIZATION (PRE-TRAINING) 
-        // * weights, biases, potentially learned positional encodings, layer normalization parameters
+    
+        // GRADIENT-BASED PARAMETER OPTIMIZATION (PRE-TRAINING)
         printfn "Starting pre-training..."
-
-        let useLora = false // Probably better to pre-train the model with useLora = false TODO verify this claim
-        //let useLora = true  
-
+    
+        let useLora = true // Probably better to pre-train with useLora = false
         use model : torch.nn.Module<torch.Tensor, torch.Tensor> = (new Transformer(int64 vocabSize, dModel, nHeads, numLayers, device, useLora)).``to``(device)
         use lossFn = new CrossEntropyLoss (ignore_index = padTokenIdx)
-
-        //Uncomment for pre-training
-        use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate) //Adam (Adaptive Moment Estimation) = gradient-based optimization algorithm //just configuration
+    
+        // PRE-TRAINING
+        // Uncomment for pre-training
+        //use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
         
-        //Uncomment for pre-training
-        model.train() //Setting the model for the pre-training mode
-        
-        //Uncomment for pre-training
-        trainEpoch model optimizer lossFn input target epochs "Pre-training"
+        // Uncomment for pre-training
+        //model.train()
 
-        //Uncomment for pre-training
-        model.save("model4.pt") |> ignore<torch.nn.Module>
+        // Checkpointing  //currently deactivated
+        let ckptFreq = 10
+        let pretrainCheckpointDir = "checkpoints/pretrain"
         
-        // FINE-TUNING 
-        printfn "Starting fine-tuning..."
-
+        let saveCkpt epoch =
+            match (epoch + 1) % ckptFreq with
+            | 0 -> saveCheckpoint model (epoch + 1) "pretrain" pretrainCheckpointDir
+            | _ -> ()
+                
+        // PRE-TRAINING (continued) 
+        // Uncomment for pre-training
+        //trainEpoch model optimizer lossFn input target epochs "Pre-training" trainingBatch saveCkpt 
+        
+        // Uncomment for pre-training
+        //model.save("model4.pt") |> ignore<torch.nn.Module>
+        
+        // FINE-TUNING with LoRA
+        printfn "Starting fine-tuning with LoRA ..."
+    
         model.load("model4.pt", strict = false) |> ignore<torch.nn.Module>
-  
-        //load_LoRA_adapters model @"g:\LoRA\" |> ignore<torch.nn.Module> //Just added to show that this fn updates the model
 
+        load_LoRA_adapters model @"g:\LoRA\" |> ignore<torch.nn.Module> //Just added to show that this fn updates the model
+      
         let freezeBaseWeights (model: torch.nn.Module) =
-
             model.named_parameters()
             |> Seq.iter
-                (fun struct (name, param)
+                (fun struct (name, param) 
                     ->
                     match name.EndsWith(".A") || name.EndsWith(".B") with
-                    | true  -> () //printfn "Trainable: %s" name
+                    | true  -> ()
                     | false -> param.requires_grad <- false
                 )
-
-        // Freeze all base (= pre-trained and fine-tuned) model weights; only LoRA weights (A and B) will be updated during fine-tuning
+    
         match useLora with
         | true  -> freezeBaseWeights model 
         | false -> ()
         
-        let (fineTuneInputData, fineTuneTargetData) = TextData2.getFineTuningCausalLMSequences ()
+        let (fineTuneInputData, fineTuneTargetData) = TextData2.getFineTuningCausalLMSequences useLora
         use fineTuneInput = torch.tensor(fineTuneInputData, device = device)
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
-
-        //Uncomment for fine-tuning without LoRA        
-        use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
-
-        (*
+    
+        //Comment out for fine-tuning with LoRA      
+        //use fineTuneOptimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
+        
         //Uncomment for fine-tuning with LoRA 
+        //(*
         use fineTuneOptimizer = //this optimizer is only updating LoRA parameters.
             torch.optim.Adam(
                 model.named_parameters()
@@ -489,50 +525,65 @@ module Transformer_TorchSharp4 =
                 |> Seq.map (fun struct (_, p2) -> p2),
                 lr = learningRate
             )
-        *)
+        //*)  
+
+        model.train() 
+       
+        // Checkpointing  //currently deactivated
+        let ftCkptFreq = 5
+        let ftCheckpointDir = "checkpoints/finetune"
         
-        //Uncomment for fine-tuning
-        model.train() //Setting the model for the fine-tuning mode
-
-        //Uncomment for fine-tuning
-        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning"
-
+        let saveFtCkpt epoch =
+            match (epoch + 1) % ftCkptFreq with
+            | 0 -> saveCheckpoint model (epoch + 1) "finetune" ftCheckpointDir
+            | _ -> ()
+       
+        // FINE-TUNING with LoRA (continued) 
+        trainEpoch model fineTuneOptimizer lossFn fineTuneInput fineTuneTarget fineTuneEpochs "Fine-tuning" fineTuneBatch saveCkpt 
+    
         let gradNorm = 
             model.parameters()
             |> Seq.filter (fun p1 -> p1.requires_grad)
             |> Seq.map (fun p2 -> p2.grad.norm())
             |> Seq.reduce (fun acc norm -> acc + norm)
-
+    
         printfn "Gradient norm: %.4f" (gradNorm.item<float32>())
 
-        //save_LoRA_adapters model @"g:\LoRA\"
+        save_LoRA_adapters model @"g:\LoRA\"
 
-        //Uncomment for saving weights and biases
-        model.save("model4.pt") |> ignore<torch.nn.Module>       
+        (*
+        //Checkpointing
 
+        printfn "Generating sequence after fine-tuning..."
+        // Load the final fine-tuning checkpoint for inference      
+        let infWeightsPath = Path.Combine(ftCheckpointDir, sprintf "finetune_model_epoch_%d.pt" fineTuneEpochs)
+        let infEpochPath = Path.Combine(ftCheckpointDir, sprintf "finetune_epoch_%d.txt" fineTuneEpochs)
+        loadCheckpoint model infWeightsPath infEpochPath |> ignore<int>
+    
+        saveCheckpoint model fineTuneEpochs "finetune" ftCheckpointDir
+        *)
+
+        model.save("model4.pt") |> ignore<torch.nn.Module>
+    
         // INFERENCE
         printfn "Generating sequence after fine-tuning..."
-
         model.load("model4.pt") |> ignore<torch.nn.Module>
         model.``to``(device) |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
                            
-        let promptContent = "What is the colour of the sky? <sep>"
+        let promptContent = prompt
         let promptTokens = Tokenizer2.tokenize promptContent |> List.toArray
-
-        model.eval() //Configures model to evaluation mode for sequence generation 
+    
+        model.eval()
 
         use inputSeq = torch.tensor(promptTokens, device = device).unsqueeze 0L
         
-        //Generating the output sequence       
         let generated = generateSeq model inputSeq initialStep acc id
                        
         printf "Generated sequence (token IDs): "
         generated |> List.iter (printf "%d ")
-
         printfn "\n"
         
         printf "Generated sequence (words): "
-      
         generated 
         |> List.iter
             (fun id 
@@ -541,12 +592,9 @@ module Transformer_TorchSharp4 =
                 | true  -> printf "%s " (vocabulary |> List.item (int id))
                 | false -> printf "<unk> "
             )        
-
         printfn "\n"
                
-        //*************************************************************         
-        // DISPOSAL SECTION
-        //*************************************************************
+        // DISPOSAL
         model.Dispose()
-        torch.CurrentDisposeScope.DisposeEverything() // see torch.NewDisposeScope() above
+        torch.CurrentDisposeScope.DisposeEverything()
         System.GC.Collect()

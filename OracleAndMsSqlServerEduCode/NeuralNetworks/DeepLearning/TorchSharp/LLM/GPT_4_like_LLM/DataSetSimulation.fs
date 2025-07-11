@@ -4,49 +4,6 @@
 // Texts simulating dataset for model training  
 //*********************************************
 
-open Settings
-
-module TextData =
-
-    // Simulate a small, balanced dataset for pre-training
-    let internal getSequences () : string list =
-        
-        let core = List.replicate 100 "The Sun is yellow"
-        let rare1 = List.replicate 10 "The Sun is black"
-        let blue1 = List.replicate 30 "The sky is blue"
-        let blue2 = List.replicate 2 "The Sun is blue"
-        let yellow2 = List.replicate 2 "The sky is yellow"        
-        
-        // Simulation of Fisher-Yates shuffle for efficiency (not true Fisher-Yates)
-        let all = core @ rare1 @ blue1 @ blue2 @ yellow2
-        let seed = 42
-        
-        let shuffleList (input: 'a list) (seed: int) : 'a list =
-            let rnd = System.Random seed
-            input
-            |> List.map (fun x -> rnd.Next(), x)
-            |> List.sortBy fst
-            |> List.map snd
-
-        shuffleList all seed  
-
-    // PREPARING FINE-TUNING DATA WITH SPECIFIC INPUT-TARGET DATA (SEQUENCES)
-    let internal getFineTuningSequences () =
-
-        let prompt = [0L; 1L; 2L] // "The Sun is"
-        let completion = [3L; eosTokenIdx] // "yellow" <eos>
-        let sequence = List.append prompt completion // [|0L; 1L; 2L; 3L; eosTokenIdx|]
-               
-        let input = sequence |> List.take (List.length sequence - 1)  // [0L; 1L; 2L; 3L]
-        let target = sequence |> List.skip 1    
-        
-        let nExamples = 30
-
-        let fineTuneInputData = Array2D.init nExamples input.Length (fun _ k -> input.[k])
-        let fineTuneTargetData = Array2D.init nExamples target.Length (fun _ k -> target.[k])
-
-        fineTuneInputData, fineTuneTargetData
-
 module TextData2 =
 
     type QAPair = string * string
@@ -63,7 +20,14 @@ module TextData2 =
                 "Is the Sun black? <sep> No."
                 "Is the sky yellow? <sep> No."
                 "Is the Sun yellow? <sep> Yes."
+                "Is the sky orange? <sep> No."
                 "Is the sky blue? <sep> Yes."
+                "The sky is not green."
+                "The Sun is not green."
+                "Orange is not green."
+                "Is the colour green blue? <sep> No."
+                "Orange is not blue."
+                "Orange is not yellow."
             ]
 
         let nExamplesPerPair = 16
@@ -86,8 +50,8 @@ module TextData2 =
     /// Pattern: [prompt tokens] <sep> [answer tokens] <eos>
     /// Input: all tokens except last; Target: all tokens except first.
     /// Masking: Use pad token for prompt and <sep> in target so loss is not computed there.
-    let internal getFineTuningCausalLMSequences () : int64[,] * int64[,] =
-
+    let internal getFineTuningCausalLMSequences lora : int64[,] * int64[,] =
+          
         let qaPairs : QAPair list =
             [
                 "What is the colour of the Sun?",     "The colour of the Sun is yellow."
@@ -107,6 +71,23 @@ module TextData2 =
                 "Is the Sun yellow?", "<sep> Yes."
                 "Is the sky blue?", "<sep> Yes."
             ]
+        
+        let qaPairsLoRA : QAPair list =
+            [
+                "What is the colour of the Sun?",     "The colour of the Sun is yellow."
+                "What is the colour of the sky?",     "The colour of the sky is blue."
+                "What colour is the Sun?",            "yellow."
+                "What colour is the sky?",            "blue."
+                "Is the Sun orange?",                 "No."
+                "Is the sky orange?",                 "No."
+                "Is the Sun yellow?",                 "Yes."
+                "Is the sky blue?",                   "Yes."
+            ]
+
+        let qaPairs = 
+            match lora with
+            | true  -> qaPairs
+            | false -> qaPairsLoRA
 
         let nExamplesPerPair = 32
 

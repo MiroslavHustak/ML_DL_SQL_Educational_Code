@@ -30,7 +30,29 @@ module Settings =
             "Is"
             "Yes"
             "No"
+            "The "
+            "Sun "
+            " is"
+            " yellow"
+            " black"
+            " sky"
+            " blue"
+            "What "
+            "the "
+            " colour"
+            " of"           
+            "Is "
+            " not"
+            "not"
+            "green"
+            "orange"
+            "Orange"
+            "or"
+            " or"
         ]
+
+    let internal prompt = "What is the colour of the sky? <sep>"
+    //let internal prompt = "Is the colour of the sky orange or blue? <sep>"
 
     let internal vocabSize = vocabulary |> List.length
 
@@ -38,11 +60,11 @@ module Settings =
     let internal padTokenIdx = vocabulary |> List.findIndex ((=) "<pad>") |> int64
 
     let [<Literal>] internal dModel = 48L //  Embeddings of size 48
-    let [<Literal>] internal epochs = 80 //240  
+    let [<Literal>] internal epochs = 60 //240  
     let [<Literal>] internal trainingBatch = 32L 
 
-    let [<Literal>] internal fineTuneEpochs = 20 //60
-    let [<Literal>] internal fineTuneBatch = 10L 
+    let [<Literal>] internal fineTuneEpochs = 10 //60
+    let [<Literal>] internal fineTuneBatch = 32L 
 
     let [<Literal>] internal nHeads = 4L   
     let [<Literal>] internal numLayers = 4 //number of transformer decoder layers

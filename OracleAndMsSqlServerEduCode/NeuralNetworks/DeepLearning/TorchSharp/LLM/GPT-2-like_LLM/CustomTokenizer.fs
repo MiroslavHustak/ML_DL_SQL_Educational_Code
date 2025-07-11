@@ -1,13 +1,13 @@
-﻿namespace NeuralNetworks
+﻿namespace NeuralNetworks2
 
 open TiktokenSharp
 open System.Text.RegularExpressions
 
-module Tokenizer =
+module Tokenizer21 =
    
     // Precompute the word-to-index map (functional, not rebuilt per call)
     let private wordToIndex =
-        Settings.vocabulary
+        Settings2.vocabulary
         |> Seq.mapi (fun i word -> (word, int64 i))
         |> Map.ofSeq
 
@@ -23,7 +23,7 @@ module Tokenizer =
                 | Some idx -> idx
                 | None     -> failwithf "Unknown word: %s" word
             )
-        |> fun tokens -> tokens @ [Settings.eosTokenIdx]
+        |> fun tokens -> tokens @ [Settings2.eosTokenIdx]
 
     // Pad sequence to target length (for batching)
     let private padTo (padIdx: int64) (len: int) (seq: int64 list) =
@@ -42,15 +42,15 @@ module Tokenizer =
         // Inputs are tokens except the last, targets are tokens except the first (classic LM setup)
         let inputs =
             tokenized
-            |> List.map (padTo Settings.padTokenIdx seqLength)
+            |> List.map (padTo Settings2.padTokenIdx seqLength)
 
         let targets =
             tokenized
             |> List.map 
                 (fun seq 
                     ->
-                    let shifted = (seq |> List.tail) @ [Settings.padTokenIdx]
-                    padTo Settings.padTokenIdx seqLength shifted
+                    let shifted = (seq |> List.tail) @ [Settings2.padTokenIdx]
+                    padTo Settings2.padTokenIdx seqLength shifted
                 )
 
         let inputArr = Array2D.init numSequences seqLength (fun i j -> inputs.[i].[j])
@@ -65,15 +65,15 @@ module Tokenizer =
             (fun idx
                 ->
                 match idx with
-                | _ when idx >= 0L && idx < int64 Settings.vocabulary.Length
-                    -> Settings.vocabulary.[int idx]
+                | _ when idx >= 0L && idx < int64 Settings2.vocabulary.Length
+                    -> Settings2.vocabulary.[int idx]
                 | _ -> "<unk>"
             ) //common placeholder token used in Natural Language Processing (NLP) meaning "unknown".
 
-module Tokenizer2 =
+module Tokenizer22 =
          
     let internal wordToIndex =
-        Settings.vocabulary
+        Settings2.vocabulary
         |> Seq.mapi (fun i word -> (word, int64 i))
         |> Map.ofSeq
 
@@ -134,14 +134,14 @@ module Tokenizer2 =
         |> List.map
             (fun idx
                 ->
-                match idx >= 0L && idx < int64 Settings.vocabulary.Length with
-                | true  -> Settings.vocabulary |> List.item (int idx)
+                match idx >= 0L && idx < int64 Settings2.vocabulary.Length with
+                | true  -> Settings2.vocabulary |> List.item (int idx)
                 | false -> "<UNK>"
             )
 
 module TikTokTokenizer =
 
-    // NEBUDE FUNGOVAT, nebot mam vocabSize = 8, coz je malo
+    // NEBUDE FUNGOVAT, nebot mam vocabSize = 20, coz je malo
 
     // Uses the cl100k_base encoding from Tiktoken, which has a large vocabulary (typically ~100,000 tokens).    
     // Uses tikToken.Encode to convert text into token IDs, which are typically in the range [0, ~100,000) based on the cl100k_base vocabulary.    

@@ -1,4 +1,4 @@
-﻿namespace NeuralNetworks
+﻿namespace NeuralNetworks2
 
 open System
 
@@ -468,7 +468,7 @@ module Transformer_TorchSharpEducation =
         // Remark: Uses TextData module to simulate scraped text (300 instances of "The Sun is yellow", 1 instance of "The Sun is black").
         
         //Diky shadowing nyni pouzivame inputData a targetData bud z custom-made tokenizatoru nebo z TikTokTokenizeru
-        let (inputData, targetData) = Tokenizer.createInputTargetPairs dataset 
+        let (inputData, targetData) = Tokenizer21.createInputTargetPairs dataset 
         //let (inputData, targetData) = TikTokTokenizer.createInputTargetPairs dataset //TikTokTokenizer //nelze quli male delky     
         
         use input = torch.tensor(inputData, device = device) // [320, 3]

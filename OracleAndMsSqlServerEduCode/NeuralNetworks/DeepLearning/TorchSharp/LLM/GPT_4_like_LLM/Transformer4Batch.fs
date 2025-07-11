@@ -465,7 +465,9 @@ module Transformer_TorchSharp4Batch =
         use lossFn = new CrossEntropyLoss (ignore_index = padTokenIdx)
     
         // PRE-TRAINING
+        //Uncomment for pre-training
         use optimizer = torch.optim.Adam(model.parameters(), lr = learningRate)
+        //Uncomment for pre-training
         model.train()
 
         // Checkpointing  //currently deactivated
@@ -480,7 +482,7 @@ module Transformer_TorchSharp4Batch =
         // PRE-TRAINING (continued) 
         trainEpoch model optimizer lossFn input target epochs "Pre-training" trainingBatch saveCkpt 
     
-        //model.save("model4.pt") |> ignore<torch.nn.Module>
+        model.save("model4.pt") |> ignore<torch.nn.Module>
         
         // FINE-TUNING
         printfn "Starting fine-tuning..."
@@ -501,7 +503,7 @@ module Transformer_TorchSharp4Batch =
         | true  -> freezeBaseWeights model 
         | false -> ()
         
-        let (fineTuneInputData, fineTuneTargetData) = TextData2.getFineTuningCausalLMSequences ()
+        let (fineTuneInputData, fineTuneTargetData) = TextData2.getFineTuningCausalLMSequences useLora
         use fineTuneInput = torch.tensor(fineTuneInputData, device = device)
         use fineTuneTarget = torch.tensor(fineTuneTargetData, device = device)
     
@@ -539,14 +541,14 @@ module Transformer_TorchSharp4Batch =
         saveCheckpoint model fineTuneEpochs "finetune" ftCheckpointDir
         *)
 
-        //model.save("model4.pt") |> ignore<torch.nn.Module>
+        model.save("model4.pt") |> ignore<torch.nn.Module>
     
         // INFERENCE
         printfn "Generating sequence after fine-tuning..."
-        //model.load("model4.pt") |> ignore<torch.nn.Module>
+        model.load("model4.pt") |> ignore<torch.nn.Module>
         model.``to``(device) |> ignore<torch.nn.Module<torch.Tensor, torch.Tensor>>
                            
-        let promptContent = "What is the colour of the sky? <sep>"
+        let promptContent = prompt
         let promptTokens = Tokenizer2.tokenize promptContent |> List.toArray
     
         model.eval()
