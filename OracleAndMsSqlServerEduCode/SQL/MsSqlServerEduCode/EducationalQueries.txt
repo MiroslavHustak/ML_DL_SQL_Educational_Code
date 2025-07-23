@@ -1,0 +1,18 @@
+﻿SELECT CustomerName, ContactName, Address, City, PostalCode, Country
+FROM Customers
+WHERE CustomerID > 2 AND City NOT LIKE '%Walla%' AND ContactName NOT LIKE '%Rancé%' 
+ORDER BY Address;
+
+SELECT CustomerName, ContactName, Address, City, PostalCode, Country
+FROM Customers
+WHERE CustomerID > 2 AND LEN(City) <= 5 --string length
+ORDER BY Address;
+
+--This query orders by Country, but if some rows have the same Country, it orders them by City, etc.
+
+SELECT * FROM Customers
+ORDER BY Country ASC, City DESC, Address ASC;
+
+--*********************************************
+SELECT * FROM Customers
+WHERE CustomerID NOT BETWEEN 10 AND 60;

@@ -1,0 +1,4714 @@
+﻿Table: Weather
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| id            | int     |
+| recordDate    | date    |
+| temperature   | int     |
++---------------+---------+
+id is the column with unique values for this table.
+There are no different rows with the same recordDate.
+This table contains information about the temperature on a certain day.
+ 
+
+Write a solution to find all dates' Id with higher temperatures compared to its previous dates (yesterday).
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Weather table:
++----+------------+-------------+
+| id | recordDate | temperature |
++----+------------+-------------+
+| 1  | 2015-01-01 | 10          |
+| 2  | 2015-01-02 | 25          |
+| 3  | 2015-01-03 | 20          |
+| 4  | 2015-01-04 | 30          |
++----+------------+-------------+
+Output: 
++----+
+| id |
++----+
+| 2  |
+| 4  |
++----+
+Explanation: 
+In 2015-01-02, the temperature was higher than the previous day (10 -> 25).
+In 2015-01-04, the temperature was higher than the previous day (20 -> 30).
+
+My solution:
+
+WITH MyCTE AS 
+(
+    SELECT 
+        CASE
+            WHEN (LAG(temperature, 1) OVER (ORDER BY recordDate ASC)) - temperature < 0 
+                 AND DATEDIFF(day, LAG(recordDate, 1) OVER (ORDER BY recordDate ASC), recordDate) = 1
+            THEN id
+            ELSE NULL
+        END AS id
+    FROM Weather
+)
+
+SELECT id
+FROM MyCTE
+WHERE id IS NOT NULL;
+
+O neco rychlejsi reseni:
+
+WITH MyCTE AS
+(
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY recordDate ASC) AS idOrdered,
+        id, 
+        recordDate, 
+        temperature
+    FROM Weather
+)
+SELECT 
+    CASE 
+        WHEN w1.temperature - w2.temperature = 0 THEN w2.id 
+        ELSE w1.id 
+    END AS id
+FROM MyCTE w1
+JOIN MyCTE w2
+ON w1.idOrdered = w2.idOrdered + 1
+WHERE w2.temperature < w1.temperature AND DATEDIFF(DAY, w2.recordDate, w1.recordDate) = 1
+ORDER BY w1.recordDate;
+
+
+****************************************************************************************************
+
+Table: Activity
+
++----------------+---------+
+| Column Name    | Type    |
++----------------+---------+
+| machine_id     | int     |
+| process_id     | int     |
+| activity_type  | enum    |
+| timestamp      | float   |
++----------------+---------+
+The table shows the user activities for a factory website.
+(machine_id, process_id, activity_type) is the primary key (combination of columns with unique values) of this table.
+machine_id is the ID of a machine.
+process_id is the ID of a process running on the machine with ID machine_id.
+activity_type is an ENUM (category) of type ('start', 'end').
+timestamp is a float representing the current time in seconds.
+'start' means the machine starts the process at the given timestamp and 'end' means the machine ends the process at the given timestamp.
+The 'start' timestamp will always be before the 'end' timestamp for every (machine_id, process_id) pair.
+ 
+
+There is a factory website that has several machines each running the same number of processes. Write a solution to find the average time each machine takes to complete a process.
+
+The time to complete a process is the 'end' timestamp minus the 'start' timestamp. The average time is calculated by the total time to complete every process on the machine divided by the number of processes that were run.
+
+The resulting table should have the machine_id along with the average time as processing_time, which should be rounded to 3 decimal places.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+Example 1:
+
+Input: 
+Activity table:
++------------+------------+---------------+-----------+
+| machine_id | process_id | activity_type | timestamp |
++------------+------------+---------------+-----------+
+| 0          | 0          | start         | 0.712     |
+| 0          | 0          | end           | 1.520     |
+| 0          | 1          | start         | 3.140     |
+| 0          | 1          | end           | 4.120     |
+| 1          | 0          | start         | 0.550     |
+| 1          | 0          | end           | 1.550     |
+| 1          | 1          | start         | 0.430     |
+| 1          | 1          | end           | 1.420     |
+| 2          | 0          | start         | 4.100     |
+| 2          | 0          | end           | 4.512     |
+| 2          | 1          | start         | 2.500     |
+| 2          | 1          | end           | 5.000     |
++------------+------------+---------------+-----------+
+Output: 
++------------+-----------------+
+| machine_id | processing_time |
++------------+-----------------+
+| 0          | 0.894           |
+| 1          | 0.995           |
+| 2          | 1.456           |
++------------+-----------------+
+Explanation: 
+There are 3 machines running 2 processes each.
+Machine 0's average time is ((1.520 - 0.712) + (4.120 - 3.140)) / 2 = 0.894
+Machine 1's average time is ((1.550 - 0.550) + (1.420 - 0.430)) / 2 = 0.995
+Machine 2's average time is ((4.512 - 4.100) + (5.000 - 2.500)) / 2 = 1.456
+
+Someone's else solution:
+
+First Solution
+
+SELECT a1.machine_id, ROUND(AVG(a2.timestamp-a1.timestamp), 3) AS processing_time 
+FROM Activity AS a1
+INNER JOIN Activity AS a2
+ON a1.machine_id=a2.machine_id AND a1.process_id=a2.process_id
+AND a1.activity_type='start' AND a2.activity_type='end'
+GROUP BY a1.machine_id
+
+Second Solution
+
+select 
+a.machine_id,
+round(
+      (select avg(a1.timestamp) from Activity a1 where a1.activity_type = 'end' and a1.machine_id = a.machine_id) - 
+      (select avg(a1.timestamp) from Activity a1 where a1.activity_type = 'start' and a1.machine_id = a.machine_id)
+,3) as processing_time
+from Activity a
+group by a.machine_id
+
+
+My solution:
+
+--pouze jednou WITH, dve CTE se musi definovat takto:
+WITH MyCTE1 AS (
+    SELECT 
+        machine_id, 
+        process_id, 
+        [timestamp],
+        LAG([timestamp]) OVER (PARTITION BY machine_id, process_id ORDER BY [timestamp]) AS lag_timestamp
+    FROM 
+        Activity
+), 
+MyCTE2 AS (    
+    SELECT 
+        machine_id, 
+        process_id, 
+        ([timestamp] - lag_timestamp) AS timestampDiff
+    FROM 
+        MyCTE1
+    WHERE 
+        [timestamp] IS NOT NULL AND lag_timestamp IS NOT NULL
+)    
+
+SELECT DISTINCT
+    machine_id, 
+    ROUND(AVG(timestampDiff) OVER (PARTITION BY machine_id), 3) AS processing_time 
+FROM 
+    MyCTE2;
+
+
+nebo 
+
+WITH MyCTE AS
+(
+    SELECT machine_id, process_id, [timestamp], 
+        LAG([timestamp], 1) OVER (PARTITION BY process_id, machine_id ORDER BY [timestamp]) AS timestampDiff
+    FROM Activity 
+)
+, MyCTE1 AS
+(
+    SELECT machine_id, process_id, [timestamp], timestampDiff,
+        ([timestamp] - timestampDiff) AS processing_time1 
+    FROM MyCTE
+    WHERE timestampDiff IS NOT NULL
+)
+
+nebo zatim nejrychlejsi reseni
+
+WITH MyCTE AS
+(
+SELECT machine_id, 
+    (timestamp - LAG(timestamp, 1) OVER (ORDER BY process_id)) AS timestampDifference,
+    ROW_NUMBER() OVER (ORDER BY machine_id ASC) AS idOrdered
+FROM Activity 
+GROUP BY process_id, machine_id, timestamp  
+)
+SELECT DISTINCT machine_id, ROUND(AVG(timestampDifference ) OVER (PARTITION BY machine_id), 3) AS processing_time 
+FROM MyCTE
+WHERE idOrdered % 2 = 0
+ORDER BY machine_id  
+
+
+*********************************************************************
+Table: Employee
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| empId       | int     |
+| name        | varchar |
+| supervisor  | int     |
+| salary      | int     |
++-------------+---------+
+empId is the column with unique values for this table.
+Each row of this table indicates the name and the ID of an employee in addition to their salary and the id of their manager.
+ 
+
+Table: Bonus
+
++-------------+------+
+| Column Name | Type |
++-------------+------+
+| empId       | int  |
+| bonus       | int  |
++-------------+------+
+empId is the column of unique values for this table.
+empId is a foreign key (reference column) to empId from the Employee table.
+Each row of this table contains the id of an employee and their respective bonus. 
+
+Write a solution to report the name and bonus amount of each employee with a bonus less than 1000.
+
+Return the result table in any order.
+
+The result format is in the following example. 
+
+Example 1:
+
+Input: 
+Employee table:
++-------+--------+------------+--------+
+| empId | name   | supervisor | salary |
++-------+--------+------------+--------+
+| 3     | Brad   | null       | 4000   |
+| 1     | John   | 3          | 1000   |
+| 2     | Dan    | 3          | 2000   |
+| 4     | Thomas | 3          | 4000   |
++-------+--------+------------+--------+
+Bonus table:
++-------+-------+
+| empId | bonus |
++-------+-------+
+| 2     | 500   |
+| 4     | 2000  |
++-------+-------+
+Output: 
++------+-------+
+| name | bonus |
++------+-------+
+| Brad | null  |
+| John | null  |
+| Dan  | 500   |
++------+-------+
+
+My solution:
+
+WITH MyCTE AS
+(
+SELECT e.name, b.bonus
+FROM Employee e
+LEFT JOIN Bonus b
+ON b.empId = e.empId 
+)
+
+SELECT MyCTE.name, MyCTE.bonus
+FROM MyCTE
+WHERE MyCTE.bonus < 1000 OR MyCTE.bonus IS NULL
+
+Moze byt jednoduse takto (coz jsem nevedel, ze lze WHERE po ON)
+SELECT e.name, b.bonus
+FROM Employee e
+LEFT JOIN Bonus b
+ON b.empId = e.empId 
+WHERE b.bonus < 1000 OR b.bonus IS NULL
+
+SELECT E.name, B.bonus
+FROM Bonus B
+RIGHT JOIN Employee E
+ON E.empId = B.empId
+WHERE B.bonus < 1000 OR B.bonus IS NULL
+
+**************************************************************************************
+Table: Students
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| student_id    | int     |
+| student_name  | varchar |
++---------------+---------+
+student_id is the primary key (column with unique values) for this table.
+Each row of this table contains the ID and the name of one student in the school.
+ 
+
+Table: Subjects
+
++--------------+---------+
+| Column Name  | Type    |
++--------------+---------+
+| subject_name | varchar |
++--------------+---------+
+subject_name is the primary key (column with unique values) for this table.
+Each row of this table contains the name of one subject in the school.
+ 
+
+Table: Examinations
+
++--------------+---------+
+| Column Name  | Type    |
++--------------+---------+
+| student_id   | int     |
+| subject_name | varchar |
++--------------+---------+
+There is no primary key (column with unique values) for this table. It may contain duplicates.
+Each student from the Students table takes every course from the Subjects table.
+Each row of this table indicates that a student with ID student_id attended the exam of subject_name.
+ 
+
+Write a solution to find the number of times each student attended each exam.
+
+Return the result table ordered by student_id and subject_name.
+
+The result format is in the following example.
+ 
+Example 1:
+
+Input: 
+Students table:
++------------+--------------+
+| student_id | student_name |
++------------+--------------+
+| 1          | Alice        |
+| 2          | Bob          |
+| 13         | John         |
+| 6          | Alex         |
++------------+--------------+
+Subjects table:
++--------------+
+| subject_name |
++--------------+
+| Math         |
+| Physics      |
+| Programming  |
++--------------+
+Examinations table:
++------------+--------------+
+| student_id | subject_name |
++------------+--------------+
+| 1          | Math         |
+| 1          | Physics      |
+| 1          | Programming  |
+| 2          | Programming  |
+| 1          | Physics      |
+| 1          | Math         |
+| 13         | Math         |
+| 13         | Programming  |
+| 13         | Physics      |
+| 2          | Math         |
+| 1          | Math         |
++------------+--------------+
+Output: 
++------------+--------------+--------------+----------------+
+| student_id | student_name | subject_name | attended_exams |
++------------+--------------+--------------+----------------+
+| 1          | Alice        | Math         | 3              |
+| 1          | Alice        | Physics      | 2              |
+| 1          | Alice        | Programming  | 1              |
+| 2          | Bob          | Math         | 1              |
+| 2          | Bob          | Physics      | 0              |
+| 2          | Bob          | Programming  | 1              |
+| 6          | Alex         | Math         | 0              |
+| 6          | Alex         | Physics      | 0              |
+| 6          | Alex         | Programming  | 0              |
+| 13         | John         | Math         | 1              |
+| 13         | John         | Physics      | 1              |
+| 13         | John         | Programming  | 1              |
++------------+--------------+--------------+----------------+
+Explanation: 
+The result table should contain all students and all subjects.
+Alice attended the Math exam 3 times, the Physics exam 2 times, and the Programming exam 1 time.
+Bob attended the Math exam 1 time, the Programming exam 1 time, and did not attend the Physics exam.
+Alex did not attend any exams.
+John attended the Math exam 1 time, the Physics exam 1 time, and the Programming exam 1 time.
+
+Solution by ChatGPT (CROSS JOIN)
+SELECT 
+    s.student_id,
+    s.student_name,
+    sub.subject_name,
+    COUNT(e.subject_name) AS attended_exams
+FROM 
+    Students s
+CROSS JOIN 
+    Subjects sub
+LEFT JOIN 
+    Examinations e ON s.student_id = e.student_id AND sub.subject_name = e.subject_name
+GROUP BY 
+    s.student_id, s.student_name, sub.subject_name
+ORDER BY 
+    s.student_id, sub.subject_name;
+
+Moje reseni (rychlesi nez vyse) s malou pomoci ChatGPT v tomto:
+- (SELECT DISTINCT subject_name FROM CompleteExaminations) sb 
+ - ON ss.student_id = e.student_id AND ss.subject_name = e.subject_name
+
+takze cele:
+
+WITH CompleteExaminations AS
+(
+    SELECT e.student_id, ss.subject_name            
+    FROM Subjects ss
+    LEFT JOIN Examinations e
+    ON ss.subject_name = e.subject_name
+),
+StudentsSubjects AS
+(
+    SELECT st.student_id, st.student_name, sb.subject_name
+    FROM Students st
+    CROSS JOIN 
+    (SELECT DISTINCT subject_name FROM CompleteExaminations) sb
+),
+MyCTE AS
+(
+    SELECT ss.student_id, ss.student_name, ss.subject_name, 
+           e.subject_name AS attended_subject
+    FROM StudentsSubjects ss
+    LEFT JOIN CompleteExaminations e
+    ON ss.student_id = e.student_id AND ss.subject_name = e.subject_name
+)
+SELECT DISTINCT
+    student_id,
+    student_name,
+    subject_name,
+    COUNT(attended_subject) OVER (PARTITION BY student_id, subject_name) AS attended_exams
+FROM MyCTE
+ORDER BY student_id, subject_name;
+
+*****************************************************************
+Table: Employee
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| id          | int     |
+| name        | varchar |
+| department  | varchar |
+| managerId   | int     |
++-------------+---------+
+id is the primary key (column with unique values) for this table.
+Each row of this table indicates the name of an employee, their department, and the id of their manager.
+If managerId is null, then the employee does not have a manager.
+No employee will be the manager of themself.
+ 
+
+Write a solution to find managers with at least five direct reports.
+
+Return the result table in any order.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Employee table:
++-----+-------+------------+-----------+
+| id  | name  | department | managerId |
++-----+-------+------------+-----------+
+| 101 | John  | A          | null      |
+| 102 | Dan   | A          | 101       |
+| 103 | James | A          | 101       |
+| 104 | Amy   | A          | 101       |
+| 105 | Anne  | A          | 101       |
+| 106 | Ron   | B          | 101       |
++-----+-------+------------+-----------+
+Output: 
++------+
+| name |
++------+
+| John |
++------+
+
+SELECT e1.name
+FROM Employee e1
+JOIN Employee e2 
+ON e2.managerId = e1.id
+GROUP BY e1.id, e1.name
+HAVING COUNT(e2.id) >= 5;
+
+dalsi napad:
+WITH MyCTE AS
+(
+    SELECT e1.id, e1.name, e1.managerId   
+    FROM Employee e1
+    INNER JOIN Employee e2
+    ON e1.id = e2.managerId
+)
+
+SELECT cte.name
+FROM Employee e
+LEFT JOIN MyCTE cte
+ON cte.id = e.managerId
+GROUP BY cte.id, cte.name
+HAVING COUNT(e.managerId) >= 5 AND cte.name IS NOT NULL;
+
+***************************************************************************************************************
+
+Table: Cinema
+
++----------------+----------+
+| Column Name    | Type     |
++----------------+----------+
+| id             | int      |
+| movie          | varchar  |
+| description    | varchar  |
+| rating         | float    |
++----------------+----------+
+id is the primary key (column with unique values) for this table.
+Each row contains information about the name of a movie, its genre, and its rating.
+rating is a 2 decimal places float in the range [0, 10]
+ 
+
+Write a solution to report the movies with an odd-numbered ID and a description that is not "boring".
+
+Return the result table ordered by rating in descending order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Cinema table:
++----+------------+-------------+--------+
+| id | movie      | description | rating |
++----+------------+-------------+--------+
+| 1  | War        | great 3D    | 8.9    |
+| 2  | Science    | fiction     | 8.5    |
+| 3  | irish      | boring      | 6.2    |
+| 4  | Ice song   | Fantacy     | 8.6    |
+| 5  | House card | Interesting | 9.1    |
++----+------------+-------------+--------+
+Output: 
++----+------------+-------------+--------+
+| id | movie      | description | rating |
++----+------------+-------------+--------+
+| 5  | House card | Interesting | 9.1    |
+| 1  | War        | great 3D    | 8.9    |
++----+------------+-------------+--------+
+Explanation: 
+We have three movies with odd-numbered IDs: 1, 3, and 5. The movie with ID = 3 is boring so we do not include it in the answer.
+
+Blbe puvodni reseni:
+SELECT id, movie, [description], rating
+FROM Cinema
+WHERE (id = 1 AND (SELECT COUNT(id) FROM Cinema) = 1 AND [description] <> 'boring' )
+      OR
+      id % 2 = 1 AND rating <> (SELECT MIN(rating) FROM Cinema) AND [description] <> 'boring'
+ORDER BY rating DESC;
+
+--rating <> (SELECT MIN(rating) FROM Cinema) jsem tam pridal navic, staci jen toto: 
+
+SELECT id, movie, [description], rating
+FROM Cinema
+WHERE (id = 1 AND (SELECT COUNT(id) FROM Cinema) = 1 AND [description] <> 'boring' )
+      OR
+      id % 2 = 1 AND [description] <> 'boring'
+ORDER BY rating DESC;
+
+Normalni reseni, tez moje: 
+
+SELECT id, movie, [description], rating 
+FROM Cinema 
+WHERE id % 2 <> 0 AND [description] <> 'boring'
+ORDER BY rating DESC
+
+*********************************************************************************
+Table: Signups
+
++----------------+----------+
+| Column Name    | Type     |
++----------------+----------+
+| user_id        | int      |
+| time_stamp     | datetime |
++----------------+----------+
+user_id is the column of unique values for this table.
+Each row contains information about the signup time for the user with ID user_id.
+ 
+
+Table: Confirmations
+
++----------------+----------+
+| Column Name    | Type     |
++----------------+----------+
+| user_id        | int      |
+| time_stamp     | datetime |
+| action         | ENUM     |
++----------------+----------+
+(user_id, time_stamp) is the primary key (combination of columns with unique values) for this table.
+user_id is a foreign key (reference column) to the Signups table.
+action is an ENUM (category) of the type ('confirmed', 'timeout')
+Each row of this table indicates that the user with ID user_id requested a confirmation message at time_stamp and that confirmation message was either confirmed ('confirmed') or expired without confirming ('timeout').
+ 
+
+The confirmation rate of a user is the number of 'confirmed' messages divided by the total number of requested confirmation messages. The confirmation rate of a user that did not request any confirmation messages is 0. Round the confirmation rate to two decimal places.
+
+Write a solution to find the confirmation rate of each user.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+
+Example 1:
+
+Input: 
+Signups table:
++---------+---------------------+
+| user_id | time_stamp          |
++---------+---------------------+
+| 3       | 2020-03-21 10:16:13 |
+| 7       | 2020-01-04 13:57:59 |
+| 2       | 2020-07-29 23:09:44 |
+| 6       | 2020-12-09 10:39:37 |
++---------+---------------------+
+Confirmations table:
++---------+---------------------+-----------+
+| user_id | time_stamp          | action    |
++---------+---------------------+-----------+
+| 3       | 2021-01-06 03:30:46 | timeout   |
+| 3       | 2021-07-14 14:00:00 | timeout   |
+| 7       | 2021-06-12 11:57:29 | confirmed |
+| 7       | 2021-06-13 12:58:28 | confirmed |
+| 7       | 2021-06-14 13:59:27 | confirmed |
+| 2       | 2021-01-22 00:00:00 | confirmed |
+| 2       | 2021-02-28 23:59:59 | timeout   |
++---------+---------------------+-----------+
+Output: 
++---------+-------------------+
+| user_id | confirmation_rate |
++---------+-------------------+
+| 6       | 0.00              |
+| 3       | 0.00              |
+| 7       | 1.00              |
+| 2       | 0.50              |
++---------+-------------------+
+Explanation: 
+User 6 did not request any confirmation messages. The confirmation rate is 0.
+User 3 made 2 requests and both timed out. The confirmation rate is 0.
+User 7 made 3 requests and all were confirmed. The confirmation rate is 1.
+User 2 made 2 requests where one was confirmed and the other timed out. The confirmation rate is 1 / 2 = 0.5.
+
+
+WITH ConfirmationsCTE AS
+(
+    SELECT 
+        user_id, [action],
+        COUNT(*) OVER (PARTITION BY user_id, [action]) AS action_count,
+        COUNT(*) OVER (PARTITION BY user_id) AS total_actions
+    FROM Confirmations
+),
+MyCTE AS
+(
+    SELECT 
+        user_id,
+        ROUND(action_count * 1.0 / total_actions, 2) AS confirmation_rate
+    FROM ConfirmationsCTE
+    WHERE [action] = 'confirmed'
+    GROUP BY user_id, action_count, total_actions
+)
+
+SELECT s.user_id, 
+    COALESCE(cte.confirmation_rate, 0) AS confirmation_rate
+FROM Signups s
+LEFT JOIN MyCTE cte ON s.user_id = cte.user_id;
+
+o hodne pomalejsi reseni
+WITH MyCTE AS
+(
+    SELECT s.user_id, c.action    
+    FROM Signups s
+    LEFT JOIN Confirmations c
+    ON s.user_id = c.user_id 
+),
+MyCTE1 AS
+(
+    SELECT user_id, COUNT(*) AS total    
+    FROM MyCTE
+    GROUP BY user_id
+),
+ConfirmationCounts AS
+(
+    SELECT user_id, COUNT(*) AS confirmed_count
+    FROM MyCTE
+    WHERE action = 'confirmed'
+    GROUP BY user_id
+)
+
+SELECT DISTINCT 
+    c1.user_id,
+    COALESCE(ROUND(CAST(cc.confirmed_count AS FLOAT) / c1.total, 2), 0) AS confirmation_rate
+FROM MyCTE1 c1
+LEFT JOIN ConfirmationCounts cc
+ON c1.user_id = cc.user_id
+ORDER BY c1.user_id;
+
+********************************************************************************
+Table: Prices
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| product_id    | int     |
+| start_date    | date    |
+| end_date      | date    |
+| price         | int     |
++---------------+---------+
+(product_id, start_date, end_date) is the primary key (combination of columns with unique values) for this table.
+Each row of this table indicates the price of the product_id in the period from start_date to end_date.
+For each product_id there will be no two overlapping periods. That means there will be no two intersecting periods for the same product_id.
+ 
+
+Table: UnitsSold
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| product_id    | int     |
+| purchase_date | date    |
+| units         | int     |
++---------------+---------+
+This table may contain duplicate rows.
+Each row of this table indicates the date, units, and product_id of each product sold. 
+ 
+
+Write a solution to find the average selling price for each product. average_price should be rounded to 2 decimal places.
+
+Return the result table in any order.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Prices table:
++------------+------------+------------+--------+
+| product_id | start_date | end_date   | price  |
++------------+------------+------------+--------+
+| 1          | 2019-02-17 | 2019-02-28 | 5      |
+| 1          | 2019-03-01 | 2019-03-22 | 20     |
+| 2          | 2019-02-01 | 2019-02-20 | 15     |
+| 2          | 2019-02-21 | 2019-03-31 | 30     |
++------------+------------+------------+--------+
+UnitsSold table:
++------------+---------------+-------+
+| product_id | purchase_date | units |
++------------+---------------+-------+
+| 1          | 2019-02-25    | 100   |
+| 1          | 2019-03-01    | 15    |
+| 2          | 2019-02-10    | 200   |
+| 2          | 2019-03-22    | 30    |
++------------+---------------+-------+
+Output: 
++------------+---------------+
+| product_id | average_price |
++------------+---------------+
+| 1          | 6.96          |
+| 2          | 16.96         |
++------------+---------------+
+Explanation: 
+Average selling price = Total Price of Product / Number of products sold.
+Average selling price for product 1 = ((100 * 5) + (15 * 20)) / 115 = 6.96
+Average selling price for product 2 = ((200 * 15) + (30 * 30)) / 230 = 16.96
+
+SELECT  
+    p.product_id, 
+    ROUND(ISNULL((SUM(p.price * u.units) + 0.00)/ (SUM(u.units) + 0.00), 0), 2) AS average_price
+FROM 
+    Prices p
+LEFT OUTER JOIN 
+    UnitsSold u ON p.product_id = u.product_id AND (purchase_date BETWEEN start_date AND end_date)
+GROUP BY 
+    p.product_id;
+
+Nove reseni:
+
+SELECT p.product_id,
+(
+    CASE
+        WHEN SUM(u.units) IS NULL THEN 0
+        ELSE ROUND(SUM(p.price * u.units * 1.00) / SUM(u.units * 1.00), 2)  
+    END    
+)
+AS average_price
+FROM Prices p
+LEFT JOIN UnitsSold u 
+ON p.product_id = u.product_id 
+AND u.purchase_date BETWEEN p.start_date AND p.end_date
+GROUP BY p.product_id;
+
+Horsi reseni:
+WITH AggregatedUnits AS (
+    SELECT 
+        product_id, 
+        purchase_date, 
+        SUM(units) AS total_units
+    FROM 
+        UnitsSold
+    GROUP BY 
+        product_id, purchase_date
+),
+MyCTE AS (
+    SELECT 
+        p.product_id, 
+        u.total_units, 
+        p.price
+    FROM 
+        Prices p
+    LEFT JOIN 
+        AggregatedUnits u
+    ON 
+        p.product_id = u.product_id 
+        AND u.purchase_date BETWEEN p.start_date AND p.end_date
+),
+CalculatedAverages AS (
+    SELECT 
+        product_id,
+        ROUND(
+            SUM(CAST(total_units AS FLOAT) * CAST(price AS FLOAT)) OVER (PARTITION BY product_id),
+            2
+        ) / NULLIF(SUM(CAST(total_units AS FLOAT)) OVER (PARTITION BY product_id), 0)
+        AS computed_average_price
+    FROM 
+        MyCTE
+)
+SELECT DISTINCT 
+    product_id, 
+    ROUND(COALESCE(computed_average_price, 0), 2) AS average_price 
+FROM 
+    CalculatedAverages;
+
+****************************************************************************************************
+
+Table: Project
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| project_id  | int     |
+| employee_id | int     |
++-------------+---------+
+(project_id, employee_id) is the primary key of this table.
+employee_id is a foreign key to Employee table.
+Each row of this table indicates that the employee with employee_id is working on the project with project_id.
+ 
+
+Table: Employee
+
++------------------+---------+
+| Column Name      | Type    |
++------------------+---------+
+| employee_id      | int     |
+| name             | varchar |
+| experience_years | int     |
++------------------+---------+
+employee_id is the primary key of this table. It's guaranteed that experience_years is not NULL.
+Each row of this table contains information about one employee.
+ 
+
+Write an SQL query that reports the average experience years of all the employees for each project, rounded to 2 digits.
+
+Return the result table in any order.
+
+The query result format is in the following example.
+
+Example 1:
+
+Input: 
+Project table:
++-------------+-------------+
+| project_id  | employee_id |
++-------------+-------------+
+| 1           | 1           |
+| 1           | 2           |
+| 1           | 3           |
+| 2           | 1           |
+| 2           | 4           |
++-------------+-------------+
+Employee table:
++-------------+--------+------------------+
+| employee_id | name   | experience_years |
++-------------+--------+------------------+
+| 1           | Khaled | 3                |
+| 2           | Ali    | 2                |
+| 3           | John   | 1                |
+| 4           | Doe    | 2                |
++-------------+--------+------------------+
+Output: 
++-------------+---------------+
+| project_id  | average_years |
++-------------+---------------+
+| 1           | 2.00          |
+| 2           | 2.50          |
++-------------+---------------+
+Explanation: The average experience years for the first project is (3 + 2 + 1) / 3 = 2.00 and for the second project is (3 + 2) / 2 = 2.50
+
+SELECT p1.project_id, ROUND(AVG(e.experience_years + 0.00), 2) AS average_years 
+FROM Employee e
+INNER JOIN Project p1
+ON p1.employee_id = e.employee_id  
+GROUP BY p1.project_id;
+
+SELECT p.project_id,
+(
+    CASE
+        WHEN SUM(e.experience_years) IS NULL THEN 0
+        ELSE ROUND(AVG(e.experience_years  * 1.00), 2)  
+    END    
+)
+AS average_years
+FROM Project p
+LEFT JOIN Employee e 
+ON p.employee_id = e.employee_id 
+GROUP BY p.project_id;
+
+dalsi reseni:
+WITH MyCTE AS
+(
+    SELECT p.project_id, p.employee_id, e.experience_years
+    FROM Project p
+    INNER JOIN Employee e
+    ON e.employee_id = p.employee_id 
+)
+SELECT project_id, 
+(
+    --ROUND(AVG(CAST(experience_years AS FLOAT)), 2) -- zaokrouhluje jinak, nez nize uvedene
+    
+    ROUND(AVG(CAST(experience_years AS DECIMAL(10,2))), 2)
+)
+AS average_years
+FROM MyCTE
+GROUP BY project_id 
+ORDER BY project_id
+***********************************************************************
+
+Table: Users
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| user_id     | int     |
+| user_name   | varchar |
++-------------+---------+
+user_id is the primary key (column with unique values) for this table.
+Each row of this table contains the name and the id of a user.
+ 
+
+Table: Register
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| contest_id  | int     |
+| user_id     | int     |
++-------------+---------+
+(contest_id, user_id) is the primary key (combination of columns with unique values) for this table.
+Each row of this table contains the id of a user and the contest they registered into.
+ 
+
+Write a solution to find the percentage of the users registered in each contest rounded to two decimals.
+
+Return the result table ordered by percentage in descending order. In case of a tie, order it by contest_id in ascending order.
+
+The result format is in the following example.
+
+Example 1:
+
+Input: 
+Users table:
++---------+-----------+
+| user_id | user_name |
++---------+-----------+
+| 6       | Alice     |
+| 2       | Bob       |
+| 7       | Alex      |
++---------+-----------+
+Register table:
++------------+---------+
+| contest_id | user_id |
++------------+---------+
+| 215        | 6       |
+| 209        | 2       |
+| 208        | 2       |
+| 210        | 6       |
+| 208        | 6       |
+| 209        | 7       |
+| 209        | 6       |
+| 215        | 7       |
+| 208        | 7       |
+| 210        | 2       |
+| 207        | 2       |
+| 210        | 7       |
++------------+---------+
+Output: 
++------------+------------+
+| contest_id | percentage |
++------------+------------+
+| 208        | 100.0      |
+| 209        | 100.0      |
+| 210        | 100.0      |
+| 215        | 66.67      |
+| 207        | 33.33      |
++------------+------------+
+Explanation: 
+All the users registered in contests 208, 209, and 210. The percentage is 100% and we sort them in the answer table by contest_id in ascending order.
+Alice and Alex registered in contest 215 and the percentage is ((2/3) * 100) = 66.67%
+Bob registered in contest 207 and the percentage is ((1/3) * 100) = 33.33%
+
+
+Neproslo casove: 
+WITH TotalUsers AS (
+    SELECT 
+        COUNT(user_id) AS total_users
+    FROM 
+        Users
+)
+
+SELECT 
+    r.contest_id,
+    ROUND((COUNT(r.user_id) * 100.0 / (SELECT total_users FROM TotalUsers)), 2) AS [percentage]
+FROM 
+    Users u
+INNER JOIN 
+    Register r ON u.user_id = r.user_id
+GROUP BY 
+    r.contest_id 
+ORDER BY 
+    [percentage] DESC, r.contest_id ASC;
+
+Tohle proslo lehce:
+
+WITH MyCTE AS
+(    
+    SELECT DISTINCT contest_id, 
+        COUNT(user_id) OVER (PARTITION BY contest_id) AS count
+    FROM Register
+)
+
+SELECT DISTINCT cte.contest_id, 
+    ROUND(((cte.count * 1.00) / (COUNT(u.user_id) * 1.00) * 100.00), 2) AS [percentage] 
+FROM MyCTE cte
+FULL OUTER JOIN Users u
+ON u.user_id IS NOT NULL 
+GROUP BY cte.contest_id, cte.count 
+ORDER BY [percentage] DESC, cte.contest_id ASC
+
+lepsi a rychlejsi je toto:
+SELECT contest_id,  
+    ( 
+        ROUND(
+            CAST(
+                (COUNT(contest_id) * 100.00) / (SELECT COUNT(user_id) FROM Users) 
+                AS DECIMAL(10, 2)
+                 ), 2
+            )
+    )
+AS percentage 
+FROM Register 
+GROUP BY contest_id 
+ORDER BY percentage DESC, contest_id ASC 
+
+*************************************************************************************
+
+Table: Queries
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| query_name  | varchar |
+| result      | varchar |
+| position    | int     |
+| rating      | int     |
++-------------+---------+
+This table may have duplicate rows.
+This table contains information collected from some queries on a database.
+The position column has a value from 1 to 500.
+The rating column has a value from 1 to 5. Query with rating less than 3 is a poor query.
+ 
+
+We define query quality as:
+
+The average of the ratio between query rating and its position.
+
+We also define poor query percentage as:
+
+The percentage of all queries with rating less than 3.
+
+Write a solution to find each query_name, the quality and poor_query_percentage.
+
+Both quality and poor_query_percentage should be rounded to 2 decimal places.
+
+Return the result table in any order.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Queries table:
++------------+-------------------+----------+--------+
+| query_name | result            | position | rating |
++------------+-------------------+----------+--------+
+| Dog        | Golden Retriever  | 1        | 5      |
+| Dog        | German Shepherd   | 2        | 5      |
+| Dog        | Mule              | 200      | 1      |
+| Cat        | Shirazi           | 5        | 2      |
+| Cat        | Siamese           | 3        | 3      |
+| Cat        | Sphynx            | 7        | 4      |
++------------+-------------------+----------+--------+
+Output: 
++------------+---------+-----------------------+
+| query_name | quality | poor_query_percentage |
++------------+---------+-----------------------+
+| Dog        | 2.50    | 33.33                 |
+| Cat        | 0.66    | 33.33                 |
++------------+---------+-----------------------+
+Explanation: 
+Dog queries quality is ((5 / 1) + (5 / 2) + (1 / 200)) / 3 = 2.50
+Dog queries poor_ query_percentage is (1 / 3) * 100 = 33.33
+
+Cat queries quality equals ((2 / 5) + (3 / 3) + (4 / 7)) / 3 = 0.66
+Cat queries poor_ query_percentage is (1 / 3) * 100 = 33.33
+
+Tohle funguje
+SELECT 
+    query_name,
+    ROUND(SUM(CAST(rating AS FLOAT) / position) / COUNT(query_name), 2) AS quality,
+    ROUND((COUNT(CASE WHEN rating < 3 THEN 1 END) * 100.0) / COUNT(*), 2) AS poor_query_percentage
+FROM 
+    Queries
+WHERE 
+    query_name IS NOT NULL    
+GROUP BY 
+    query_name;
+
+nebo tohle:
+WITH MyCTE AS
+(
+    SELECT 
+        query_name, 
+        position, 
+        rating,
+        (rating * 1.00 / position * 1.00) AS quality
+    FROM Queries
+),
+MyCTE1 AS
+(
+    SELECT 
+        query_name, 
+        ROUND(AVG(quality), 2) AS quality, 
+        COUNT(*) AS total_count,
+        SUM(CASE WHEN rating < 3 THEN 1 ELSE 0 END) AS poor_count
+    FROM MyCTE
+    GROUP BY query_name
+),
+MyCTE2 AS
+(
+    SELECT 
+        query_name, 
+        ROUND((poor_count * 1.00 / total_count) * 100, 2) AS poor_query_percentage
+    FROM MyCTE1
+)
+
+SELECT cte1.query_name, cte1.quality, cte2.poor_query_percentage
+FROM MyCTE2 cte2
+JOIN MyCTE1 cte1
+ON cte1.query_name = cte2.query_name;
+
+tohle take funguje, ale je to pomale:
+WITH MyCTE AS (
+    SELECT 
+        query_name, 
+        position, 
+        rating,
+        CASE
+            WHEN rating < 3 THEN 1 
+            ELSE 0 
+        END AS poor_rating
+    FROM Queries    
+)
+SELECT 
+    query_name,
+    ROUND(SUM(CAST(rating AS FLOAT) / CAST(position AS FLOAT)) / CAST(COUNT(query_name) AS FLOAT), 2) AS quality,
+    ROUND(CAST(SUM(poor_rating) AS FLOAT) / CAST(COUNT(query_name) AS FLOAT) * 100.00, 2) AS poor_query_percentage
+FROM MyCTE
+GROUP BY query_name
+ORDER BY query_name DESC
+
+******************************************************************************************************
+
+Table: Transactions
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| id            | int     |
+| country       | varchar |
+| state         | enum    |
+| amount        | int     |
+| trans_date    | date    |
++---------------+---------+
+id is the primary key of this table.
+The table has information about incoming transactions.
+The state column is an enum of type ["approved", "declined"].
+ 
+
+Write an SQL query to find for each month and country, the number of transactions and their total amount, the number of approved transactions and their total amount.
+
+Return the result table in any order.
+
+The query result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Transactions table:
++------+---------+----------+--------+------------+
+| id   | country | state    | amount | trans_date |
++------+---------+----------+--------+------------+
+| 121  | US      | approved | 1000   | 2018-12-18 |
+| 122  | US      | declined | 2000   | 2018-12-19 |
+| 123  | US      | approved | 2000   | 2019-01-01 |
+| 124  | DE      | approved | 2000   | 2019-01-07 |
++------+---------+----------+--------+------------+
+Output: 
++----------+---------+-------------+----------------+--------------------+-----------------------+
+| month    | country | trans_count | approved_count | trans_total_amount | approved_total_amount |
++----------+---------+-------------+----------------+--------------------+-----------------------+
+| 2018-12  | US      | 2           | 1              | 3000               | 1000                  |
+| 2019-01  | US      | 1           | 1              | 2000               | 2000                  |
+| 2019-01  | DE      | 1           | 1              | 2000               | 2000                  |
++----------+---------+-------------+----------------+--------------------+-----------------------+
+
+
+When we use SUM() function around this CASE statement, it effectively counts the number of rows where the state column is 'approved'. This is because SUM() adds up all the 1s returned by the CASE statement, effectively counting how many times the condition state = 'approved' is true in the dataset.
+
+WITH MonthCTE AS (
+    SELECT 
+        DATEFROMPARTS(YEAR(trans_date), MONTH(trans_date), 1) AS Month,
+        country,
+        state,
+        amount
+    FROM 
+        Transactions
+)
+SELECT 
+    FORMAT(Month, 'yyyy-MM') AS month,
+    country, 
+    COUNT(*) AS trans_count, 
+    SUM(CASE WHEN state = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+    SUM(CASE WHEN state = 'approved' THEN amount ELSE 0 END) AS approved_total_amount,
+    SUM(amount) AS trans_total_amount
+FROM 
+    MonthCTE
+GROUP BY 
+    month, country;
+
+lepsi reseni:
+
+SELECT 
+    FORMAT(trans_date, 'yyyy-MM') AS month, 
+    country,
+    COUNT(trans_date) AS trans_count, 
+    COUNT(CASE WHEN [state] = 'approved' THEN 1 END) AS approved_count, 
+    SUM(amount) AS trans_total_amount, 
+    SUM(CASE WHEN [state] = 'approved' THEN amount ELSE 0 END) AS approved_total_amount
+FROM Transactions 
+GROUP BY FORMAT(trans_date, 'yyyy-MM'), country;
+
+vsimni se, ze GROUP BY month tady nejde, tak se to musi obejit tak, jak se to obeslo
+
+************************************************************************
+
+Table: Delivery
+
++-----------------------------+---------+
+| Column Name                 | Type    |
++-----------------------------+---------+
+| delivery_id                 | int     |
+| customer_id                 | int     |
+| order_date                  | date    |
+| customer_pref_delivery_date | date    |
++-----------------------------+---------+
+delivery_id is the column of unique values of this table.
+The table holds information about food delivery to customers that make orders at some date and specify a preferred delivery date (on the same order date or after it).
+ 
+
+If the customer's preferred delivery date is the same as the order date, then the order is called immediate; otherwise, it is called scheduled.
+
+The first order of a customer is the order with the earliest order date that the customer made. It is guaranteed that a customer has precisely one first order.
+
+Write a solution to find the percentage of immediate orders in the first orders of all customers, rounded to 2 decimal places.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Delivery table:
++-------------+-------------+------------+-----------------------------+
+| delivery_id | customer_id | order_date | customer_pref_delivery_date |
++-------------+-------------+------------+-----------------------------+
+| 1           | 1           | 2019-08-01 | 2019-08-02                  |
+| 2           | 2           | 2019-08-02 | 2019-08-02                  |
+| 3           | 1           | 2019-08-11 | 2019-08-12                  |
+| 4           | 3           | 2019-08-24 | 2019-08-24                  |
+| 5           | 3           | 2019-08-21 | 2019-08-22                  |
+| 6           | 2           | 2019-08-11 | 2019-08-13                  |
+| 7           | 4           | 2019-08-09 | 2019-08-09                  |
++-------------+-------------+------------+-----------------------------+
+Output: 
++----------------------+
+| immediate_percentage |
++----------------------+
+| 50.00                |
++----------------------+
+Explanation: 
+The customer id 1 has a first order with delivery id 1 and it is scheduled.
+The customer id 2 has a first order with delivery id 2 and it is immediate.
+The customer id 3 has a first order with delivery id 5 and it is scheduled.
+The customer id 4 has a first order with delivery id 7 and it is immediate.
+Hence, half the customers have immediate first orders.
+
+
+
+WITH MinOrderDates AS (
+    SELECT customer_id, MIN(order_date) AS min_order_date
+    FROM Delivery
+    GROUP BY customer_id
+)
+
+SELECT 
+    ROUND(
+        (COUNT(CASE WHEN d.order_date = d.customer_pref_delivery_date THEN d.customer_id END) + 0.0)
+        / 
+        (SELECT COUNT(DISTINCT customer_id) FROM Delivery)
+        * 100.0,
+        2
+    ) AS immediate_percentage
+FROM Delivery d
+JOIN MinOrderDates m ON d.customer_id = m.customer_id
+WHERE d.order_date = m.min_order_date
+  AND d.customer_pref_delivery_date = m.min_order_date;
+
+dalsi, ale pomalejsi reseni:
+WITH RankedDeliveries AS (
+    SELECT 
+        customer_id,
+        order_date,
+        customer_pref_delivery_date,
+        ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date) AS rn
+    FROM Delivery
+), 
+Scheduled AS (
+    SELECT 
+        customer_id,    
+        CASE 
+            WHEN rn = 1 AND order_date = customer_pref_delivery_date THEN order_date
+            ELSE NULL
+        END AS scheduled
+    FROM RankedDeliveries
+)
+
+SELECT DISTINCT  
+    ROUND
+    ( 
+        (SELECT COUNT(scheduled) FROM Scheduled WHERE scheduled IS NOT NULL) * 1.00 /
+         ((SELECT COUNT(DISTINCT customer_id) FROM Scheduled) * 1.00) * 100.00, 2
+    ) 
+     AS immediate_percentage 
+FROM Scheduled
+
+
+***************************************************************************
+
+
+able: Activity
+
++--------------+---------+
+| Column Name  | Type    |
++--------------+---------+
+| player_id    | int     |
+| device_id    | int     |
+| event_date   | date    |
+| games_played | int     |
++--------------+---------+
+(player_id, event_date) is the primary key (combination of columns with unique values) of this table.
+This table shows the activity of players of some games.
+Each row is a record of a player who logged in and played a number of games (possibly 0) before logging out on someday using some device.
+ 
+
+Write a solution to report the fraction of players that logged in again on the day after the day they first logged in, rounded to 2 decimal places. In other words, you need to count the number of players that logged in for at least two consecutive days starting from their first login date, then divide that number by the total number of players.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Activity table:
++-----------+-----------+------------+--------------+
+| player_id | device_id | event_date | games_played |
++-----------+-----------+------------+--------------+
+| 1         | 2         | 2016-03-01 | 5            |
+| 1         | 2         | 2016-03-02 | 6            |
+| 2         | 3         | 2017-06-25 | 1            |
+| 3         | 1         | 2016-03-02 | 0            |
+| 3         | 4         | 2018-07-03 | 5            |
++-----------+-----------+------------+--------------+
+Output: 
++-----------+
+| fraction  |
++-----------+
+| 0.33      |
++-----------+
+Explanation: 
+Only the player with id 1 logged back in after the first day he had logged in so the answer is 1/3 = 0.33
+
+
+SELECT ROUND(
+           (1.0 * 
+            (SELECT COUNT(DISTINCT a1.player_id)
+             FROM Activity a1
+             JOIN Activity a2 
+             ON a1.player_id = a2.player_id
+             AND a2.event_date = DATEADD(day, 1, a1.event_date)
+             WHERE EXISTS (
+                 SELECT 1
+                 FROM Activity a3
+                 WHERE a3.player_id = a1.player_id
+                 HAVING MIN(a3.event_date) = a1.event_date
+             )
+            ) /
+            (SELECT COUNT(DISTINCT player_id) FROM Activity)
+           ), 2) AS fraction;
+
+The SELECT 1 statement is used in conjunction with the HAVING clause to perform a filtering condition within a subquery. Let's break down this part of the query:
+
+SELECT 1: This part of the query is a standard SQL syntax where 1 is a constant value that gets selected for each row that meets the condition specified in the WHERE clause. In SQL, you can use SELECT 1 (or any constant value) to indicate that you want to return a result for each row that matches the filtering criteria in the WHERE clause. The actual value 1 is not relevant; it's just a placeholder to indicate a match.
+
+
+rychlejsi moje reseni (castecne pomohl ChatGPT):
+WITH CTE AS (
+    SELECT 
+        player_id,
+        event_date,
+        ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY event_date) AS RowNum,
+        LEAD(event_date) OVER (PARTITION BY player_id ORDER BY event_date) AS ConsecutiveDate
+    FROM Activity
+), 
+CTE1 AS (
+    SELECT COUNT(DISTINCT player_id) AS count FROM Activity 
+),
+CTE2 AS (
+    SELECT 
+        c1.count,
+        c.player_id,
+        CASE 
+            WHEN DATEDIFF(day, c.event_date, c.ConsecutiveDate) = 1 AND c.RowNum = 1 THEN (1.000/c1.count)
+            ELSE 0.00
+        END AS fraction
+    FROM CTE c
+    CROSS JOIN CTE1 c1
+    WHERE c.RowNum = 1 OR DATEDIFF(day, c.event_date, c.ConsecutiveDate) = 1
+    GROUP BY c.player_id, c.event_date, c.ConsecutiveDate, c.RowNum, c1.count
+)
+
+SELECT ROUND(SUM(CONVERT(FLOAT, fraction)), 2) AS fraction
+FROM CTE2
+
+
+dalsi reseni, ale pomale:
+WITH LaggedActivity AS (
+    SELECT player_id, 
+           event_date,
+           ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY event_date) AS RowNum,
+           LAG(event_date) OVER (PARTITION BY player_id ORDER BY event_date) AS previous_date
+    FROM Activity
+),
+ConsecutiveDays AS (
+    SELECT player_id
+    FROM LaggedActivity
+    WHERE DATEDIFF(day, previous_date, event_date) = 1 AND previous_date IS NOT NULL 
+          AND RowNum = 2  -- Ensures we are looking at the second event (after the first login)
+)
+SELECT 
+    ROUND(
+        CAST(COUNT(DISTINCT player_id) AS FLOAT) / 
+        CAST((SELECT COUNT(DISTINCT player_id) FROM Activity) AS FLOAT), 
+    2) AS fraction
+FROM ConsecutiveDays;
+
+
+***********************************************************************************
+
+Table: Teacher
+
++-------------+------+
+| Column Name | Type |
++-------------+------+
+| teacher_id  | int  |
+| subject_id  | int  |
+| dept_id     | int  |
++-------------+------+
+(subject_id, dept_id) is the primary key (combinations of columns with unique values) of this table.
+Each row in this table indicates that the teacher with teacher_id teaches the subject subject_id in the department dept_id.
+ 
+
+Write a solution to calculate the number of unique subjects each teacher teaches in the university.
+
+Return the result table in any order.
+
+The result format is shown in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Teacher table:
++------------+------------+---------+
+| teacher_id | subject_id | dept_id |
++------------+------------+---------+
+| 1          | 2          | 3       |
+| 1          | 2          | 4       |
+| 1          | 3          | 3       |
+| 2          | 1          | 1       |
+| 2          | 2          | 1       |
+| 2          | 3          | 1       |
+| 2          | 4          | 1       |
++------------+------------+---------+
+Output:  
++------------+-----+
+| teacher_id | cnt |
++------------+-----+
+| 1          | 2   |
+| 2          | 4   |
++------------+-----+
+Explanation: 
+Teacher 1:
+  - They teach subject 2 in departments 3 and 4.
+  - They teach subject 3 in department 3.
+Teacher 2:
+  - They teach subject 1 in department 1.
+  - They teach subject 2 in department 1.
+  - They teach subject 3 in department 1.
+  - They teach subject 4 in department 1.
+
+
+SELECT teacher_id, 
+(
+    COUNT (DISTINCT subject_id)
+)
+AS cnt
+FROM Teacher
+GROUP BY teacher_id
+
+*******************************************************
+
+Table: Activity
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| user_id       | int     |
+| session_id    | int     |
+| activity_date | date    |
+| activity_type | enum    |
++---------------+---------+
+This table may have duplicate rows.
+The activity_type column is an ENUM (category) of type ('open_session', 'end_session', 'scroll_down', 'send_message').
+The table shows the user activities for a social media website. 
+Note that each session belongs to exactly one user.
+ 
+
+Write a solution to find the daily active user count for a period of 30 days ending 2019-07-27 inclusively. A user was active on someday if they made at least one activity on that day.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Activity table:
++---------+------------+---------------+---------------+
+| user_id | session_id | activity_date | activity_type |
++---------+------------+---------------+---------------+
+| 1       | 1          | 2019-07-20    | open_session  |
+| 1       | 1          | 2019-07-20    | scroll_down   |
+| 1       | 1          | 2019-07-20    | end_session   |
+| 2       | 4          | 2019-07-20    | open_session  |
+| 2       | 4          | 2019-07-21    | send_message  |
+| 2       | 4          | 2019-07-21    | end_session   |
+| 3       | 2          | 2019-07-21    | open_session  |
+| 3       | 2          | 2019-07-21    | send_message  |
+| 3       | 2          | 2019-07-21    | end_session   |
+| 4       | 3          | 2019-06-25    | open_session  |
+| 4       | 3          | 2019-06-25    | end_session   |
++---------+------------+---------------+---------------+
+Output: 
++------------+--------------+ 
+| day        | active_users |
++------------+--------------+ 
+| 2019-07-20 | 2            |
+| 2019-07-21 | 2            |
++------------+--------------+ 
+Explanation: Note that we do not care about days with zero active users.
+
+WITH MyCTE AS
+(
+SELECT activity_date AS day, COUNT (DISTINCT user_id) AS active_users
+FROM Activity 
+WHERE activity_date BETWEEN DATEADD(DAY, -29, '2019-07-27') AND '2019-07-27'
+GROUP BY user_id, activity_date
+)
+
+SELECT cte.day AS day, COUNT(cte.active_users) AS active_users
+FROM MyCTE cte
+GROUP BY cte.day, cte.active_users
+
+
+anebo takhle, hmmmmm:
+SELECT activity_date AS day, COUNT(DISTINCT user_id) AS active_users
+FROM Activity
+GROUP BY activity_date
+HAVING activity_date BETWEEN DATEADD(day, -29, '2019-07-27') AND '2019-07-27'
+
+zajimave, ze tohle je rychlejsi:
+WITH CTE AS
+(
+    SELECT 
+    (
+        CASE
+            WHEN activity_date BETWEEN DATEADD(day, -29, '2019-07-27') AND '2019-07-27'
+            THEN activity_date ELSE NULL
+        END    
+    )
+    AS day, 
+    (
+        
+        CASE
+            WHEN activity_date BETWEEN DATEADD(day, -29, '2019-07-27') AND '2019-07-27'
+            THEN 1 ELSE 0
+        END    
+    )
+    AS count
+    FROM Activity
+    GROUP BY user_id, activity_date
+)
+
+SELECT day, (SUM(count)) AS active_users
+FROM CTE
+GROUP BY day 
+HAVING day IS NOT NULL
+
+***********************************************************************************************
+
+Table: Sales
+
++-------------+-------+
+| Column Name | Type  |
++-------------+-------+
+| sale_id     | int   |
+| product_id  | int   |
+| year        | int   |
+| quantity    | int   |
+| price       | int   |
++-------------+-------+
+(sale_id, year) is the primary key (combination of columns with unique values) of this table.
+product_id is a foreign key (reference column) to Product table.
+Each row of this table shows a sale on the product product_id in a certain year.
+Note that the price is per unit.
+ 
+
+Table: Product
+
++--------------+---------+
+| Column Name  | Type    |
++--------------+---------+
+| product_id   | int     |
+| product_name | varchar |
++--------------+---------+
+product_id is the primary key (column with unique values) of this table.
+Each row of this table indicates the product name of each product.
+ 
+
+Write a solution to select the product id, year, quantity, and price for the first year of every product sold.
+
+Return the resulting table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Sales table:
++---------+------------+------+----------+-------+
+| sale_id | product_id | year | quantity | price |
++---------+------------+------+----------+-------+ 
+| 1       | 100        | 2008 | 10       | 5000  |
+| 2       | 100        | 2009 | 12       | 5000  |
+| 7       | 200        | 2011 | 15       | 9000  |
++---------+------------+------+----------+-------+
+Product table:
++------------+--------------+
+| product_id | product_name |
++------------+--------------+
+| 100        | Nokia        |
+| 200        | Apple        |
+| 300        | Samsung      |
++------------+--------------+
+Output: 
++------------+------------+----------+-------+
+| product_id | first_year | quantity | price |
++------------+------------+----------+-------+ 
+| 100        | 2008       | 10       | 5000  |
+| 200        | 2011       | 15       | 9000  |
++------------+------------+----------+-------+
+
+Casove neakceptovana reseni:
+
+WITH MyCTE AS
+(
+SELECT product_id, MIN(year) AS min_year 
+FROM Sales 
+GROUP BY product_id
+)
+
+SELECT s.product_id, s.year AS first_year , s.quantity, s.price 
+FROM Sales s
+JOIN MyCTE cte
+ON s.product_id = cte.product_id AND s.year = cte.min_year
+
+nebo od ChatGPT:
+SELECT s.product_id, s.year AS first_year, s.quantity, s.price
+FROM Sales s
+JOIN (
+    SELECT product_id, MIN(year) AS min_year
+    FROM Sales
+    GROUP BY product_id
+) t ON s.product_id = t.product_id AND s.year = t.min_year;
+
+Je zajimave, ze tohle je casove nevyhovujici, aji kdyz je to v podstate stejne, jako reseni s CTE:
+SELECT 
+    product_id, 
+    first_year AS first_year, 
+    quantity, 
+    price
+FROM (
+    SELECT 
+        product_id, 
+        year AS first_year, 
+        quantity, 
+        price, 
+        RANK() OVER (PARTITION BY product_id ORDER BY year) AS rank_position
+    FROM Sales
+) AS RankedSales
+WHERE rank_position = 1;
+
+
+Moje casove vyhovujici reseni:
+WITH MyCTE AS
+(    
+    SELECT product_id, 
+        RANK() OVER (PARTITION BY product_id ORDER BY year) AS rank, year, quantity, price 
+    FROM Sales 
+)
+
+SELECT product_id, year AS first_year, quantity, price
+FROM MyCTE
+WHERE rank = 1
+
+*********************************************************************************
+
+Table: Courses
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| student     | varchar |
+| class       | varchar |
++-------------+---------+
+(student, class) is the primary key (combination of columns with unique values) for this table.
+Each row of this table indicates the name of a student and the class in which they are enrolled.
+ 
+
+Write a solution to find all the classes that have at least five students.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Courses table:
++---------+----------+
+| student | class    |
++---------+----------+
+| A       | Math     |
+| B       | English  |
+| C       | Math     |
+| D       | Biology  |
+| E       | Math     |
+| F       | Computer |
+| G       | Math     |
+| H       | Math     |
+| I       | Math     |
++---------+----------+
+Output: 
++---------+
+| class   |
++---------+
+| Math    |
++---------+
+Explanation: 
+- Math has 6 students, so we include it.
+- English has 1 student, so we do not include it.
+- Biology has 1 student, so we do not include it.
+- Computer has 1 student, so we do not include it.
+
+SELECT class   
+FROM Courses
+GROUP BY class
+HAVING COUNT(student) >= 5
+
+SELECT class
+FROM Courses
+GROUP BY class
+HAVING COUNT(class) >= 5 --tohle je rychlejsi
+
+
+*************************************************************************
+Table: Followers
+
++-------------+------+
+| Column Name | Type |
++-------------+------+
+| user_id     | int  |
+| follower_id | int  |
++-------------+------+
+(user_id, follower_id) is the primary key (combination of columns with unique values) for this table.
+This table contains the IDs of a user and a follower in a social media app where the follower follows the user.
+ 
+
+Write a solution that will, for each user, return the number of followers.
+
+Return the result table ordered by user_id in ascending order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Followers table:
++---------+-------------+
+| user_id | follower_id |
++---------+-------------+
+| 0       | 1           |
+| 1       | 0           |
+| 2       | 0           |
+| 2       | 1           |
++---------+-------------+
+Output: 
++---------+----------------+
+| user_id | followers_count|
++---------+----------------+
+| 0       | 1              |
+| 1       | 1              |
+| 2       | 2              |
++---------+----------------+
+Explanation: 
+The followers of 0 are {1}
+The followers of 1 are {0}
+The followers of 2 are {0,1}
+
+SELECT user_id, 
+(
+    COUNT(user_id)
+)
+AS followers_count
+FROM Followers 
+GROUP BY user_id 
+
+nebo take:
+SELECT user_id, COUNT(follower_id ) AS followers_count
+FROM Followers 
+GROUP BY user_id
+ORDER BY user_id ASC
+
+nebo take
+SELECT user_id, COUNT(user_id) AS followers_count
+FROM Followers 
+WHERE follower_id IS NOT NULL
+GROUP BY user_id
+
+********************************************************************************
+
+Table: MyNumbers
+
++-------------+------+
+| Column Name | Type |
++-------------+------+
+| num         | int  |
++-------------+------+
+This table may contain duplicates (In other words, there is no primary key for this table in SQL).
+Each row of this table contains an integer.
+ 
+
+A single number is a number that appeared only once in the MyNumbers table.
+
+Find the largest single number. If there is no single number, report null.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+MyNumbers table:
++-----+
+| num |
++-----+
+| 8   |
+| 8   |
+| 3   |
+| 3   |
+| 1   |
+| 4   |
+| 5   |
+| 6   |
++-----+
+Output: 
++-----+
+| num |
++-----+
+| 6   |
++-----+
+Explanation: The single numbers are 1, 4, 5, and 6.
+Since 6 is the largest single number, we return it.
+Example 2:
+
+Input: 
+MyNumbers table:
++-----+
+| num |
++-----+
+| 8   |
+| 8   |
+| 7   |
+| 7   |
+| 3   |
+| 3   |
+| 3   |
++-----+
+Output: 
++------+
+| num  |
++------+
+| null |
++------+
+Explanation: There are no single numbers in the input table so we return null.
+
+
+WITH MyCTE AS
+(
+    SELECT num
+    FROM MyNumbers
+    GROUP BY num
+    HAVING COUNT(num) = 1 
+)
+
+SELECT 
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM MyCTE) THEN MAX(num)
+        ELSE NULL
+    END AS num
+FROM MyCTE;
+
+tohle je rychlejsi
+WITH CTE AS
+(
+    SELECT num
+    FROM MyNumbers
+    GROUP BY num
+    HAVING COUNT(num) = 1 
+)
+
+SELECT MAX(num) AS num
+FROM CTE
+
+tady je equivalent vyse uvedeneho jako derived table. Vsimni si povinneho SubQuery
+SELECT MAX(num) AS num
+FROM
+(
+    SELECT num
+    FROM MyNumbers 
+    GROUP BY num
+    HAVING COUNT(num) = 1
+) AS SubQuery;
+
+******************************************************************************************************
+
+Table: Customer
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| customer_id | int     |
+| product_key | int     |
++-------------+---------+
+This table may contain duplicates rows. 
+customer_id is not NULL.
+product_key is a foreign key (reference column) to Product table.
+ 
+
+Table: Product
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| product_key | int     |
++-------------+---------+
+product_key is the primary key (column with unique values) for this table.
+ 
+
+Write a solution to report the customer ids from the Customer table that bought all the products in the Product table.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Customer table:
++-------------+-------------+
+| customer_id | product_key |
++-------------+-------------+
+| 1           | 5           |
+| 2           | 6           |
+| 3           | 5           |
+| 3           | 6           |
+| 1           | 6           |
++-------------+-------------+
+Product table:
++-------------+
+| product_key |
++-------------+
+| 5           |
+| 6           |
++-------------+
+Output: 
++-------------+
+| customer_id |
++-------------+
+| 1           |
+| 3           |
++-------------+
+Explanation: 
+The customers who bought all the products (5 and 6) are customers with IDs 1 and 3.
+
+
+WITH CustomerProductCounts AS (
+    SELECT customer_id, COUNT(DISTINCT product_key) AS num_products_bought
+    FROM Customer
+    GROUP BY customer_id
+),
+AllProducts AS (
+    SELECT COUNT(DISTINCT product_key) AS num_products_available
+    FROM Product
+)
+
+SELECT cpc.customer_id
+FROM CustomerProductCounts cpc
+JOIN AllProducts ap ON cpc.num_products_bought = ap.num_products_available;
+
+
+Lepe toto:
+WITH CTE AS
+(
+    SELECT 
+        CASE
+            WHEN product_key IN (SELECT product_key FROM Product) THEN customer_id 
+        END AS customer_id, 
+        product_key,
+        (SELECT COUNT(product_key) FROM Product) AS total_count   
+    FROM Customer
+    GROUP BY customer_id, product_key
+) 
+
+SELECT customer_id 
+FROM CTE
+GROUP BY customer_id, total_count
+HAVING COUNT(customer_id) = total_count;
+
+
+nebo take takto:
+s CTE
+WITH MyCTE AS
+(
+    SELECT DISTINCT customer_id, product_key 
+    FROM Customer 
+)
+
+SELECT customer_id  
+FROM MyCTE 
+GROUP BY customer_id  
+HAVING COUNT(customer_id) = (SELECT COUNT(product_key) FROM Product)
+
+...nebo s derived table
+SELECT customer_id  
+FROM (  
+    SELECT DISTINCT customer_id, product_key  
+    FROM Customer  
+) AS DistinctCustomer  
+GROUP BY customer_id  
+HAVING COUNT(product_key) = (SELECT COUNT(product_key) FROM Product);
+
+**********************************************************************************
+
+
+Table: Employees
+
++-------------+----------+
+| Column Name | Type     |
++-------------+----------+
+| employee_id | int      |
+| name        | varchar  |
+| reports_to  | int      |
+| age         | int      |
++-------------+----------+
+employee_id is the column with unique values for this table.
+This table contains information about the employees and the id of the manager they report to. Some employees do not report to anyone (reports_to is null). 
+ 
+
+For this problem, we will consider a manager an employee who has at least 1 other employee reporting to them.
+
+Write a solution to report the ids and the names of all managers, the number of employees who report directly to them, and the average age of the reports rounded to the nearest integer.
+
+Return the result table ordered by employee_id.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Employees table:
++-------------+---------+------------+-----+
+| employee_id | name    | reports_to | age |
++-------------+---------+------------+-----+
+| 9           | Hercy   | null       | 43  |
+| 6           | Alice   | 9          | 41  |
+| 4           | Bob     | 9          | 36  |
+| 2           | Winston | null       | 37  |
++-------------+---------+------------+-----+
+Output: 
++-------------+-------+---------------+-------------+
+| employee_id | name  | reports_count | average_age |
++-------------+-------+---------------+-------------+
+| 9           | Hercy | 2             | 39          |
++-------------+-------+---------------+-------------+
+Explanation: Hercy has 2 people report directly to him, Alice and Bob. Their average age is (41+36)/2 = 38.5, which is 39 after rounding it to the nearest integer.
+Example 2:
+
+Input: 
+Employees table:
++-------------+---------+------------+-----+ 
+| employee_id | name    | reports_to | age |
+|-------------|---------|------------|-----|
+| 1           | Michael | null       | 45  |
+| 2           | Alice   | 1          | 38  |
+| 3           | Bob     | 1          | 42  |
+| 4           | Charlie | 2          | 34  |
+| 5           | David   | 2          | 40  |
+| 6           | Eve     | 3          | 37  |
+| 7           | Frank   | null       | 50  |
+| 8           | Grace   | null       | 48  |
++-------------+---------+------------+-----+ 
+Output: 
++-------------+---------+---------------+-------------+
+| employee_id | name    | reports_count | average_age |
+| ----------- | ------- | ------------- | ----------- |
+| 1           | Michael | 2             | 40          |
+| 2           | Alice   | 2             | 37          |
+| 3           | Bob     | 1             | 37          |
++-------------+---------+---------------+-------------+
+
+
+SELECT e.employee_id, e.name, 
+(
+   COUNT(r.reports_to)
+)
+AS reports_count,
+(
+    --ROUND(AVG(r.age), 0)
+    --CEILING(AVG(r.age + 0.0))
+    ROUND(AVG(r.age*1.0),0)
+) 
+AS average_age
+FROM Employees e
+JOIN Employees r
+ON e.employee_id = r.reports_to AND r.reports_to IS NOT NULL
+GROUP BY e.employee_id, e.name
+ORDER BY e.employee_id
+
+lepe takto:
+WITH CTE AS
+(
+    SELECT 
+        reports_to AS manager_id, 
+        COUNT(reports_to) AS reports_count, 
+        ROUND(AVG(CAST(age AS FLOAT)), 0) AS average_age   
+    FROM Employees
+    WHERE reports_to IS NOT NULL AND reports_to IN (SELECT employee_id FROM Employees)
+    GROUP BY reports_to
+)
+
+SELECT c.manager_id AS employee_id, e.[name], c.reports_count, c.average_age
+FROM CTE c
+LEFT JOIN Employees e 
+ON c.manager_id = e.employee_id 
+ORDER BY c.manager_id
+
+nebo baj takto:
+
+WITH MyCTE AS (
+    SELECT reports_to, age 
+    FROM Employees 
+    WHERE reports_to IS NOT NULL
+)
+
+SELECT e.employee_id, e.name,
+    COUNT(c.reports_to) AS reports_count,
+    ROUND(AVG(CAST(c.age AS FLOAT)), 0) AS average_age
+FROM Employees e
+INNER JOIN MyCTE c
+ON c.reports_to = e.employee_id 
+GROUP BY e.employee_id, e.name 
+ORDER BY e.employee_id ASC
+
+*********************************************************************************************************
+
+Table: Employee
+
++---------------+---------+
+| Column Name   |  Type   |
++---------------+---------+
+| employee_id   | int     |
+| department_id | int     |
+| primary_flag  | varchar |
++---------------+---------+
+(employee_id, department_id) is the primary key (combination of columns with unique values) for this table.
+employee_id is the id of the employee.
+department_id is the id of the department to which the employee belongs.
+primary_flag is an ENUM (category) of type ('Y', 'N'). If the flag is 'Y', the department is the primary department for the employee. If the flag is 'N', the department is not the primary.
+ 
+
+Employees can belong to multiple departments. When the employee joins other departments, they need to decide which department is their primary department. Note that when an employee belongs to only one department, their primary column is 'N'.
+
+Write a solution to report all the employees with their primary department. For employees who belong to one department, report their only department.
+
+Return the result table in any order.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Employee table:
++-------------+---------------+--------------+
+| employee_id | department_id | primary_flag |
++-------------+---------------+--------------+
+| 1           | 1             | N            |
+| 2           | 1             | Y            |
+| 2           | 2             | N            |
+| 3           | 3             | N            |
+| 4           | 2             | N            |
+| 4           | 3             | Y            |
+| 4           | 4             | N            |
++-------------+---------------+--------------+
+Output: 
++-------------+---------------+
+| employee_id | department_id |
++-------------+---------------+
+| 1           | 1             |
+| 2           | 1             |
+| 3           | 3             |
+| 4           | 3             |
++-------------+---------------+
+Explanation: 
+- The Primary department for employee 1 is 1.
+- The Primary department for employee 2 is 1.
+- The Primary department for employee 3 is 3.
+- The Primary department for employee 4 is 3.
+
+
+SELECT DISTINCT n.employee_id, n.department_id
+FROM Employee y
+INNER JOIN Employee n 
+ON y.employee_id = n.employee_id
+GROUP BY n.employee_id, n.department_id, n.primary_flag
+HAVING COUNT(n.department_id) = 1 OR n.primary_flag = 'Y';
+
+
+Pomalejsi reseni:
+WITH CTE AS 
+(
+    SELECT e1.employee_id,
+        CASE 
+            WHEN e1.primary_flag = 'Y' THEN e1.department_id
+            WHEN e1.primary_flag = 'N' AND
+                    (SELECT COUNT(*) FROM Employee e2 WHERE e2.employee_id = e1.employee_id) = 1 
+            THEN e1.department_id
+            ELSE NULL
+        END AS department_id
+    FROM Employee e1
+    GROUP BY e1.employee_id, e1.department_id, e1.primary_flag
+)
+
+SELECT employee_id, department_id
+FROM CTE 
+WHERE department_id IS NOT NULL;
+
+Dalsi reseni:
+WITH MyCTE AS
+(
+    SELECT DISTINCT employee_id, department_id,
+        ROW_NUMBER() OVER (PARTITION BY employee_id ORDER BY primary_flag DESC) AS myRank
+    FROM Employee
+)
+
+SELECT employee_id, department_id      
+FROM MyCTE
+WHERE myRank = 1
+
+The query using ROW_NUMBER() in a CTE will likely perform better, especially on larger datasets, because it avoids the expensive aggregation and distinct operations.
+
+*************************************************************************
+Table: Triangle
+
++-------------+------+
+| Column Name | Type |
++-------------+------+
+| x           | int  |
+| y           | int  |
+| z           | int  |
++-------------+------+
+In SQL, (x, y, z) is the primary key column for this table.
+Each row of this table contains the lengths of three line segments.
+ 
+
+Report for every three line segments whether they can form a triangle.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Triangle table:
++----+----+----+
+| x  | y  | z  |
++----+----+----+
+| 13 | 15 | 30 |
+| 10 | 20 | 15 |
++----+----+----+
+Output: 
++----+----+----+----------+
+| x  | y  | z  | triangle |
++----+----+----+----------+
+| 13 | 15 | 30 | No       |
+| 10 | 20 | 15 | Yes      |
++----+----+----+----------+
+
+
+SELECT x, y, z,
+    CASE
+        WHEN x + y > z AND x + z > y AND y + z > x THEN 'Yes'
+        ELSE 'No'
+    END AS triangle 
+FROM Triangle;
+
+
+nebo jeste takhle, zde je zajimavy ten UNION ALL (kupodivu to neni ani o moc pomalejsi, nez vyse uvedeny kod):
+WITH Yes AS (
+    SELECT x, y, z, 'Yes' AS triangle 
+    FROM Triangle
+    WHERE x + y > z AND x + z > y AND y + z > x
+),
+Nope AS (
+    SELECT x, y, z, 'No' AS triangle 
+    FROM Triangle
+    WHERE x + y <= z OR x + z <= y OR y + z <= x
+)
+SELECT x, y, z, triangle
+FROM Yes
+UNION ALL
+SELECT x, y, z, triangle
+FROM Nope;
+*****************************************************************
+
+Table: Logs
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| id          | int     |
+| num         | varchar |
++-------------+---------+
+In SQL, id is the primary key for this table.
+id is an autoincrement column.
+ 
+
+Find all numbers that appear at least three times consecutively.
+
+Return the result table in any order.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Logs table:
++----+-----+
+| id | num |
++----+-----+
+| 1  | 1   |
+| 2  | 1   |
+| 3  | 1   |
+| 4  | 2   |
+| 5  | 1   |
+| 6  | 2   |
+| 7  | 2   |
++----+-----+
+Output: 
++-----------------+
+| ConsecutiveNums |
++-----------------+
+| 1               |
++-----------------+
+Explanation: 1 is the only number that appears consecutively for at least three times.
+
+
+WITH ConsecutiveSequences AS (
+    SELECT id, num,
+           ROW_NUMBER() OVER (ORDER BY id) -
+           ROW_NUMBER() OVER (PARTITION BY num ORDER BY id) AS SequenceGroup
+    FROM Logs
+)
+SELECT DISTINCT num AS ConsecutiveNums
+FROM ConsecutiveSequences
+GROUP BY num, SequenceGroup
+HAVING COUNT(*) >= 
+
+Tohle je rychlejsi:
+WITH CTE AS
+(
+    SELECT 
+        LAG(num, 2) OVER (ORDER BY id) AS num_2,
+        LAG(num, 1) OVER (ORDER BY id) AS num_1,
+        num AS num_0,
+        LAG(id, 2) OVER (ORDER BY id) AS id_2,
+        LAG(id, 1) OVER (ORDER BY id) AS id_1,
+        id AS id_0
+    FROM Logs
+)    
+SELECT DISTINCT
+    num_0 AS ConsecutiveNums 
+FROM CTE    
+WHERE 
+    num_2 = num_1 AND num_2 = num_0 AND 
+    (id_2 + 1) = id_1 AND (id_1 + 1) = id_0;
+
+Tohle vypada jednodussi:
+WITH Consecutive AS (
+SELECT 
+    num,
+    LEAD(num) OVER (ORDER BY id) AS next_num,
+    LAG(num) OVER (ORDER BY id) AS prev_num
+FROM Logs
+)
+
+SELECT DISTINCT num AS ConsecutiveNums
+FROM Consecutive
+WHERE num = next_num AND num = prev_num
+
+*************************************
+
+Table: Products
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| product_id    | int     |
+| new_price     | int     |
+| change_date   | date    |
++---------------+---------+
+(product_id, change_date) is the primary key (combination of columns with unique values) of this table.
+Each row of this table indicates that the price of some product was changed to a new price at some date.
+ 
+
+Write a solution to find the prices of all products on 2019-08-16. Assume the price of all products before any change is 10.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Products table:
++------------+-----------+-------------+
+| product_id | new_price | change_date |
++------------+-----------+-------------+
+| 1          | 20        | 2019-08-14  |
+| 2          | 50        | 2019-08-14  |
+| 1          | 30        | 2019-08-15  |
+| 1          | 35        | 2019-08-16  |
+| 2          | 65        | 2019-08-17  |
+| 3          | 20        | 2019-08-18  |
++------------+-----------+-------------+
+Output: 
++------------+-------+
+| product_id | price |
++------------+-------+
+| 2          | 50    |
+| 1          | 35    |
+| 3          | 10    |
++------------+-------+
+
+SELECT
+    product_id,
+    FIRST_VALUE(new_price) OVER (PARTITION BY product_id ORDER BY change_date DESC) AS price
+FROM Products
+WHERE change_date <= '2019-08-16'
+UNION
+SELECT
+    product_id,
+    10 AS price
+FROM Products
+GROUP BY product_id
+HAVING MIN(change_date) > '2019-08-16'
+
+
+Moje slozitejsi reseni, kupodivu rychlejsi
+WITH CTE1 AS
+(
+    SELECT 
+        product_id, 
+        CASE
+            WHEN change_date <= '2019-08-16' THEN new_price 
+            ELSE 10
+        END AS price,
+        CASE
+            WHEN MIN(change_date) OVER (PARTITION BY product_id) < '2019-08-16' 
+                 AND MAX(change_date) OVER (PARTITION BY product_id) > '2019-08-16' 
+                 AND change_date > '2019-08-16' THEN NULL
+            ELSE change_date
+        END AS change_date
+    FROM Products  
+),
+CTE2 AS
+(
+    SELECT 
+        product_id,
+        price,
+        change_date,
+        ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY change_date DESC) AS rn
+    FROM CTE1
+),
+CTE3 AS
+(
+    SELECT product_id, price, change_date
+    FROM CTE1 
+    WHERE change_date = '2019-08-16' 
+),
+CTE4 AS
+( 
+    SELECT product_id, price, change_date
+    FROM CTE2 
+    WHERE rn = 1 
+), 
+CTE5 AS
+(
+    SELECT c3.product_id, c3.price, c3.change_date
+    FROM CTE3 c3
+    UNION
+    SELECT c4.product_id, c4.price, c4.change_date
+    FROM CTE4 c4
+),
+CTE6 AS
+(
+SELECT 
+    product_id,
+    price,
+    change_date,
+    COUNT(*) OVER (PARTITION BY product_id) AS cnt
+FROM CTE5 
+GROUP BY product_id, price, change_date
+)
+
+SELECT 
+    product_id, 
+    CASE 
+        WHEN cnt > 1 THEN (SELECT price FROM CTE6 c2 WHERE c2.product_id = c1.product_id AND c2.change_date = '2019-08-16')
+        ELSE price
+    END AS price
+FROM CTE6 c1
+GROUP BY product_id, price, cnt, change_date
+HAVING (cnt > 1 AND change_date = '2019-08-16') OR cnt = 1;
+
+Dalsi reseni, tentokrat s pomoci ChatGPT:
+
+WITH MyCTE AS
+(
+    SELECT product_id, 
+           new_price, 
+           change_date,
+           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY change_date DESC) AS row_num
+    FROM Products
+    WHERE change_date <= '2019-08-16'
+),
+LatestPrices AS
+(
+    SELECT product_id, new_price AS price
+    FROM MyCTE
+    WHERE row_num = 1
+
+    UNION ALL
+
+    SELECT DISTINCT product_id, 10 AS price
+    FROM Products
+    WHERE product_id NOT IN (SELECT product_id FROM MyCTE)
+)
+
+SELECT product_id, price
+FROM LatestPrices
+ORDER BY product_id
+
+*******************************************************************************
+*******************************************************************************
+
+1204. Last Person to Fit in the Bus
+
+Table: Queue
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| person_id   | int     |
+| person_name | varchar |
+| weight      | int     |
+| turn        | int     |
++-------------+---------+
+person_id column contains unique values.
+This table has the information about all people waiting for a bus.
+The person_id and turn columns will contain all numbers from 1 to n, where n is the number of rows in the table.
+turn determines the order of which the people will board the bus, where turn=1 denotes the first person to board and turn=n denotes the last person to board.
+weight is the weight of the person in kilograms.
+ 
+
+There is a queue of people waiting to board a bus. However, the bus has a weight limit of 1000 kilograms, so there may be some people who cannot board.
+
+Write a solution to find the person_name of the last person that can fit on the bus without exceeding the weight limit. The test cases are generated such that the first person does not exceed the weight limit.
+
+The result format is in the following example.
+
+
+Example 1:
+
+Input: 
+Queue table:
++-----------+-------------+--------+------+
+| person_id | person_name | weight | turn |
++-----------+-------------+--------+------+
+| 5         | Alice       | 250    | 1    |
+| 4         | Bob         | 175    | 5    |
+| 3         | Alex        | 350    | 2    |
+| 6         | John Cena   | 400    | 3    |
+| 1         | Winston     | 500    | 6    |
+| 2         | Marie       | 200    | 4    |
++-----------+-------------+--------+------+
+Output: 
++-------------+
+| person_name |
++-------------+
+| John Cena   |
++-------------+
+Explanation: The folowing table is ordered by the turn for simplicity.
++------+----+-----------+--------+--------------+
+| Turn | ID | Name      | Weight | Total Weight |
++------+----+-----------+--------+--------------+
+| 1    | 5  | Alice     | 250    | 250          |
+| 2    | 3  | Alex      | 350    | 600          |
+| 3    | 6  | John Cena | 400    | 1000         | (last person to board)
+| 4    | 2  | Marie     | 200    | 1200         | (cannot board)
+| 5    | 4  | Bob       | 175    | ___          |
+| 6    | 1  | Winston   | 500    | ___          |
++------+----+-----------+--------+--------------+
+ChatGPT - pomale reseni:
+SELECT TOP 1 person_name
+FROM (
+    SELECT person_name,
+           turn,
+           SUM(weight) OVER (ORDER BY turn) AS total_weight
+    FROM Queue
+) AS accumulated
+WHERE total_weight <= 1000
+ORDER BY turn DESC;
+
+The second-best solution (my own):
+Approx. the equivalent of List.scan or acc in List.fold
+WITH MyCTE AS
+(
+SELECT
+    person_id,
+    person_name,
+    weight,
+    turn,
+    SUM(weight) OVER (ORDER BY turn ASC) AS accumulator
+FROM Queue
+), Accumulation AS
+(
+SELECT person_name, accumulator
+FROM MyCTE
+GROUP BY turn, accumulator, person_name
+HAVING accumulator <= 1000 
+)
+
+SELECT person_name
+FROM Accumulation
+WHERE accumulator = (SELECT MAX(accumulator) FROM Accumulation);
+
+
+Moje a nejrychlejsi reseni:
+
+/* Write your T-SQL query statement below */
+WITH CTE1 AS
+(
+    SELECT turn, person_name, weight,
+    SUM(weight) OVER (ORDER BY turn ASC) AS CumulativeSum --tahle WF je eqv List.scan
+    FROM Queue 
+)
+SELECT DISTINCT
+    CASE
+        WHEN COUNT(turn) <= 2 THEN (SELECT TOP 1 person_name FROM CTE1 ORDER BY turn) 
+        ELSE
+            CASE 
+                WHEN (SELECT TOP 1 person_name FROM CTE1 WHERE CumulativeSum <= 1000 ORDER BY turn DESC) IS NULL 
+                THEN (SELECT TOP 1 person_name FROM CTE1 ORDER BY turn DESC)
+                ELSE (SELECT TOP 1 person_name FROM CTE1 WHERE CumulativeSum <= 1000 ORDER BY turn DESC)
+            END  
+    END AS person_name     
+FROM CTE1 
+
+Dalsi mozne reseni (s ekvivalentem List.scan):
+WITH MyCTE AS
+(
+SELECT 
+    weight, turn, person_name,
+    SUM(weight) OVER (ORDER BY turn ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS RunningTotal
+FROM Queue
+),
+MyCTE1 AS
+(
+SELECT weight, turn, person_name, RunningTotal
+FROM MyCTE
+WHERE RunningTotal <= 1000
+)
+
+SELECT person_name 
+FROM MyCTE1
+WHERE turn = (SELECT MAX(turn) FROM MyCTE1)
+
+
+********************************************************
+Table: Accounts
+
++-------------+------+
+| Column Name | Type |
++-------------+------+
+| account_id  | int  |
+| income      | int  |
++-------------+------+
+account_id is the primary key (column with unique values) for this table.
+Each row contains information about the monthly income for one bank account.
+ 
+
+Write a solution to calculate the number of bank accounts for each salary category. The salary categories are:
+
+"Low Salary": All the salaries strictly less than $20000.
+"Average Salary": All the salaries in the inclusive range [$20000, $50000].
+"High Salary": All the salaries strictly greater than $50000.
+The result table must contain all three categories. If there are no accounts in a category, return 0.
+
+Return the result table in any order.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Accounts table:
++------------+--------+
+| account_id | income |
++------------+--------+
+| 3          | 108939 |
+| 2          | 12747  |
+| 8          | 87709  |
+| 6          | 91796  |
++------------+--------+
+Output: 
++----------------+----------------+
+| category       | accounts_count |
++----------------+----------------+
+| Low Salary     | 1              |
+| Average Salary | 0              |
+| High Salary    | 3              |
++----------------+----------------+
+Explanation: 
+Low Salary: Account 2.
+Average Salary: No accounts.
+High Salary: Accounts 3, 6, and 8.
+
+Pomale reseni:
+
+WITH MyCTE AS
+(
+    SELECT
+        CASE
+            WHEN income < 20000 THEN 'Low Salary'
+            WHEN income BETWEEN 20000 AND 50000 THEN 'Average Salary'
+            WHEN income > 50000 THEN 'High Salary'
+            ELSE NULL
+        END AS category,
+        income AS accounts_count
+    FROM
+        Accounts
+)
+
+SELECT categories.category,
+       COALESCE(COUNT(MyCTE.accounts_count), 0) AS accounts_count
+FROM
+ (
+    SELECT 'Low Salary' AS category
+    UNION
+    SELECT 'Average Salary' AS category
+    UNION
+    SELECT 'High Salary' AS category
+) AS categories
+LEFT JOIN MyCTE ON categories.category = MyCTE.category
+GROUP BY categories.category
+ORDER BY accounts_count DESC;
+
+Rychlejsi reseni:
+WITH CTE1 AS
+(
+--pocitadlo
+SELECT
+    SUM(CASE WHEN income < 20000 THEN 1 ELSE 0 END) AS lowSalary,
+    SUM(CASE WHEN income BETWEEN 20000 AND 50000 THEN 1 ELSE 0 END) AS averageSalary,
+    SUM(CASE WHEN income > 50000 THEN 1 ELSE 0 END) AS highSalary
+FROM Accounts
+)
+
+SELECT 
+    (SELECT 'High Salary' AS category) AS category,
+    (SELECT highSalary FROM CTE1) AS accounts_count
+FROM CTE1  
+UNION ALL  
+SELECT 
+    (SELECT 'Low Salary' AS category) AS category,
+    (SELECT lowSalary FROM CTE1) AS accounts_count
+FROM CTE1  
+UNION ALL  
+SELECT 
+    (SELECT 'Average Salary' AS category) AS category,
+    (SELECT averageSalary FROM CTE1) AS accounts_count
+FROM CTE1  
+
+Stejne rychle je toto reseni s UNPIVOT: 
+WITH CTE1 AS
+(
+SELECT
+    SUM(CASE WHEN income < 20000 THEN 1 ELSE 0 END) AS 'Low Salary',
+    SUM(CASE WHEN income BETWEEN 20000 AND 50000 THEN 1 ELSE 0 END) AS 'Average Salary',
+    SUM(CASE WHEN income > 50000 THEN 1 ELSE 0 END) AS 'High Salary'
+FROM Accounts
+)
+
+SELECT category, accounts_count 
+FROM CTE1 
+UNPIVOT (accounts_count for category IN ([Low Salary], [Average Salary], [High Salary])) AS Unpivoted
+
+You can use the PIVOT and UNPIVOT relational operators to change a table-valued expression into another table. PIVOT rotates a table-valued expression by turning the unique values from one column in the expression into multiple columns in the output. And PIVOT runs aggregations where they're required on any remaining column values that are wanted in the final output. UNPIVOT carries out the opposite operation to PIVOT by rotating columns of a table-valued expression into column values.
+
+A jeste nejake dalsi reseni, zrejme pomale:
+WITH MyCTE AS
+(
+    SELECT account_id, income, 
+        CASE 
+            WHEN income < 20000 THEN 'Low Salary' 
+            WHEN income > 50000 THEN 'High Salary' 
+            WHEN income >= 20000 AND income <= 50000 THEN 'Average Salary' 
+            ELSE NULL 
+        END AS category   
+    FROM Accounts
+),
+Categories1 AS
+(
+SELECT category, COUNT(category) AS accounts_count 
+FROM MyCTE
+GROUP BY category
+),
+Categories AS (
+    SELECT 'High Salary' AS category
+    UNION ALL
+    SELECT 'Low Salary'
+    UNION ALL
+    SELECT 'Average Salary'
+)
+SELECT c.category, 
+       COALESCE(a.accounts_count, 0) AS accounts_count
+FROM Categories c
+LEFT JOIN Categories1 a 
+ON c.category = a.category;
+
+******************************************************************************
+Table: Employees
+
++-------------+----------+
+| Column Name | Type     |
++-------------+----------+
+| employee_id | int      |
+| name        | varchar  |
+| manager_id  | int      |
+| salary      | int      |
++-------------+----------+
+In SQL, employee_id is the primary key for this table.
+This table contains information about the employees, their salary, and the ID of their manager. Some employees do not have a manager (manager_id is null). 
+ 
+
+Find the IDs of the employees whose salary is strictly less than $30000 and whose manager left the company. When a manager leaves the company, their information is deleted from the Employees table, but the reports still have their manager_id set to the manager that left.
+
+Return the result table ordered by employee_id.
+
+The result format is in the following example.
+ 
+Example 1:
+
+Input:  
+Employees table:
++-------------+-----------+------------+--------+
+| employee_id | name      | manager_id | salary |
++-------------+-----------+------------+--------+
+| 3           | Mila      | 9          | 60301  |
+| 12          | Antonella | null       | 31000  |
+| 13          | Emery     | null       | 67084  |
+| 1           | Kalel     | 11         | 21241  |
+| 9           | Mikaela   | null       | 50937  |
+| 11          | Joziah    | 6          | 28485  |
++-------------+-----------+------------+--------+
+Output: 
++-------------+
+| employee_id |
++-------------+
+| 11          |
++-------------+
+
+Explanation: 
+The employees with a salary less than $30000 are 1 (Kalel) and 11 (Joziah).
+Kalel's manager is employee 11, who is still in the company (Joziah).
+Joziah's manager is employee 6, who left the company because there is no row for employee 6 as it was deleted.
+
+SELECT employee_id
+FROM Employees
+WHERE salary < 30000 AND manager_id NOT IN (SELECT employee_id FROM Employees)
+ORDER BY employee_id;
+
+******************************************
+
+Table: Seat
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| id          | int     |
+| student     | varchar |
++-------------+---------+
+id is the primary key (unique value) column for this table.
+Each row of this table indicates the name and the ID of a student.
+id is a continuous increment.
+ 
+
+Write a solution to swap the seat id of every two consecutive students. If the number of students is odd, the id of the last student is not swapped.
+
+Return the result table ordered by id in ascending order.
+
+The result format is in the following example.
+
+Example 1:
+
+Input: 
+Seat table:
++----+---------+
+| id | student |
++----+---------+
+| 1  | Abbot   |
+| 2  | Doris   |
+| 3  | Emerson |
+| 4  | Green   |
+| 5  | Jeames  |
++----+---------+
+Output: 
++----+---------+
+| id | student |
++----+---------+
+| 1  | Doris   |
+| 2  | Abbot   |
+| 3  | Green   |
+| 4  | Emerson |
+| 5  | Jeames  |
++----+---------+
+Explanation: 
+Note that if the number of students is odd, there is no need to change the last one's seat.
+
+SELECT 
+    id,
+    CASE
+        WHEN id % 2 = 0 THEN
+            COALESCE(LAG(student) OVER (ORDER BY id), student)
+        ELSE
+            COALESCE(LAG(student) OVER (ORDER BY id DESC), student)
+    END AS student
+FROM 
+    Seat
+ORDER BY 
+    id;
+
+
+pomalejsi reseni nekoho jineho
+SELECT 
+    id, 
+    CASE 
+        WHEN id % 2 = 1 THEN COALESCE(LEAD(student) OVER (ORDER BY id), student)
+        ELSE LAG(student) OVER (ORDER BY id)
+    END AS student
+FROM 
+    Seat;
+
+WITH CTE AS
+(
+    SELECT (id + 1) AS id, student
+    FROM Seat
+    WHERE id % 2 <> 0
+), CTE1 AS
+(
+    SELECT (id - 1) AS id, student
+    FROM Seat
+    WHERE id % 2 = 0
+), CTE2 AS
+(   
+    SELECT id, student
+    FROM CTE
+    UNION ALL
+    SELECT id, student
+    FROM CTE1
+)
+
+nejrychlejsi reseni ze vsech:
+WITH CTE AS
+(
+    SELECT (id + 1) AS id, student
+    FROM Seat
+    WHERE id % 2 <> 0
+), CTE1 AS
+(
+    SELECT (id - 1) AS id, student
+    FROM Seat
+    WHERE id % 2 = 0
+), CTE2 AS
+(   
+    SELECT id, student
+    FROM CTE
+    UNION 
+    SELECT id, student
+    FROM CTE1
+)
+
+SELECT DISTINCT 
+    CASE
+        WHEN (SELECT COUNT(student) % 2 FROM Seat) <> 0 AND id = (SELECT COUNT(student) FROM Seat) + 1 
+        THEN id - 1 
+        ELSE id
+    END AS id, student 
+ FROM CTE2 
+ GROUP BY id, student
+ ORDER BY id ASC
+
+
+nebo strucneji
+WITH CTE AS
+(
+    SELECT (id + 1) AS id, student
+    FROM Seat
+    WHERE id % 2 <> 0
+), CTE1 AS
+(
+    SELECT (id - 1) AS id, student
+    FROM Seat
+    WHERE id % 2 = 0
+    UNION ALL
+    SELECT id, student
+    FROM CTE
+)
+
+SELECT DISTINCT 
+    CASE
+        WHEN (SELECT COUNT(student) % 2 FROM Seat) <> 0 AND id = (SELECT COUNT(student) FROM Seat) + 1 
+        THEN id - 1 
+        ELSE id
+    END AS id, student 
+ FROM CTE1 
+ GROUP BY id, student
+ ORDER BY id ASC
+
+
+A naposledy nejkratsi reseni ze vseho (navic uplne moje, bez GPT):
+WITH MyCTE AS
+(
+    SELECT 
+        CASE
+            WHEN id % 2 <> 0 THEN id + 1 ELSE id - 1
+        END AS id, student, (SELECT COUNT(*) FROM Seat) AS count 
+    FROM Seat
+)
+
+SELECT 
+    CASE
+        WHEN MAX(count) % 2 <> 0 AND id = count + 1
+            THEN count
+            ELSE id
+    END AS id, student 
+FROM MyCTE
+GROUP BY id, student, count   
+ORDER BY id
+
+
+******************************************************************************
+
+Table: Movies
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| movie_id      | int     |
+| title         | varchar |
++---------------+---------+
+movie_id is the primary key (column with unique values) for this table.
+title is the name of the movie.
+ 
+
+Table: Users
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| user_id       | int     |
+| name          | varchar |
++---------------+---------+
+user_id is the primary key (column with unique values) for this table.
+ 
+
+Table: MovieRating
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| movie_id      | int     |
+| user_id       | int     |
+| rating        | int     |
+| created_at    | date    |
++---------------+---------+
+(movie_id, user_id) is the primary key (column with unique values) for this table.
+This table contains the rating of a movie by a user in their review.
+created_at is the user's review date. 
+ 
+
+Write a solution to:
+
+Find the name of the user who has rated the greatest number of movies. In case of a tie, return the lexicographically smaller user name.
+Find the movie name with the highest average rating in February 2020. In case of a tie, return the lexicographically smaller movie name.
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Movies table:
++-------------+--------------+
+| movie_id    |  title       |
++-------------+--------------+
+| 1           | Avengers     |
+| 2           | Frozen 2     |
+| 3           | Joker        |
++-------------+--------------+
+Users table:
++-------------+--------------+
+| user_id     |  name        |
++-------------+--------------+
+| 1           | Daniel       |
+| 2           | Monica       |
+| 3           | Maria        |
+| 4           | James        |
++-------------+--------------+
+MovieRating table:
++-------------+--------------+--------------+-------------+
+| movie_id    | user_id      | rating       | created_at  |
++-------------+--------------+--------------+-------------+
+| 1           | 1            | 3            | 2020-01-12  |
+| 1           | 2            | 4            | 2020-02-11  |
+| 1           | 3            | 2            | 2020-02-12  |
+| 1           | 4            | 1            | 2020-01-01  |
+| 2           | 1            | 5            | 2020-02-17  | 
+| 2           | 2            | 2            | 2020-02-01  | 
+| 2           | 3            | 2            | 2020-03-01  |
+| 3           | 1            | 3            | 2020-02-22  | 
+| 3           | 2            | 4            | 2020-02-25  | 
++-------------+--------------+--------------+-------------+
+Output: 
++--------------+
+| results      |
++--------------+
+| Daniel       |
+| Frozen 2     |
++--------------+
+Explanation: 
+Daniel and Monica have rated 3 movies ("Avengers", "Frozen 2" and "Joker") but Daniel is smaller lexicographically.
+Frozen 2 and Joker have a rating average of 3.5 in February but Frozen 2 is smaller lexicographically.
+
+--How to make middle problem out of two easy problems? Right. UNION them.
+SELECT results
+FROM
+(
+    SELECT TOP 1 U.[name] AS results
+    FROM MovieRating AS MR
+    LEFT JOIN Users AS U
+    ON MR.user_id = U.user_id
+    GROUP BY U.[name]
+    ORDER BY COUNT(MR.movie_id) DESC, U.[name] ASC
+) AS A1
+UNION ALL
+SELECT results 
+FROM
+(
+    SELECT TOP 1 M.title AS results
+    FROM MovieRating AS MR
+    LEFT JOIN Movies AS M
+    ON MR.movie_id = M.movie_id
+    WHERE MONTH(MR.created_at) = 2 AND YEAR(MR.created_at) = 2020
+    GROUP BY M.title, M.movie_id
+    ORDER BY (CAST(SUM(MR.rating) AS FLOAT) / CAST(COUNT(MR.user_id) AS FLOAT)) DESC, M.title ASC
+) AS A2
+
+rychlejsi zcela moje reseni:
+WITH CTE AS
+(
+    SELECT mr.movie_id, m.title, mr.user_id, u.name, mr.rating, mr.created_at
+    FROM MovieRating mr
+    LEFT JOIN Users u
+    ON u.user_id = mr.user_id    
+    LEFT JOIN Movies m
+    ON m.movie_id = mr.movie_id   
+), CTE1 AS
+(
+    SELECT name, COUNT(user_id) AS count 
+    FROM CTE
+    GROUP BY name, user_id 
+), CTE2 AS
+(
+    SELECT MAX(count) AS max_count
+    FROM CTE1
+), CTE3 AS
+(
+    SELECT name, count 
+    FROM CTE1
+    WHERE (SELECT max_count FROM CTE2) = (SELECT count FROM CTE2)
+), CTE4 AS
+(
+    SELECT title, rating AS february_rating
+    FROM CTE
+    WHERE (created_at BETWEEN '2020-02-01' AND '2020-02-29') 
+), CTE5 AS
+(
+    SELECT title, AVG(CAST(february_rating AS FLOAT)) AS average_rating
+    FROM CTE4
+    GROUP BY title
+), CTE6 AS
+(
+    SELECT MAX(average_rating) AS highest_rating
+    FROM CTE5   
+), 
+CTE7 AS
+(
+    SELECT title  
+    FROM CTE5
+    WHERE (SELECT average_rating FROM CTE6) = (SELECT highest_rating FROM CTE6)
+), CTE8 AS
+(
+    SELECT TOP 1 name AS results FROM CTE3
+    ORDER BY name ASC
+    UNION ALL --film a user muze byt stejny retezec, proto ALL
+    SELECT TOP 1 title FROM CTE7
+    ORDER BY title ASC
+) 
+
+SELECT results FROM CTE8
+
+
+nyni refactoring meho kodu:
+
+WITH UserRatings AS
+(
+    SELECT 
+        u.name, 
+        COUNT(mr.user_id) AS count
+    FROM 
+        MovieRating mr
+    JOIN 
+        Users u ON u.user_id = mr.user_id    
+    GROUP BY 
+        u.name
+),
+MaxUserRatings AS
+(
+    SELECT 
+        name,
+        count,
+        RANK() OVER (ORDER BY count DESC, name ASC) AS rank
+    FROM 
+        UserRatings
+),
+FebruaryRatings AS
+(
+    SELECT 
+        m.title, 
+        AVG(CAST(mr.rating AS FLOAT)) AS average_rating
+    FROM 
+        MovieRating mr
+    JOIN 
+        Movies m ON m.movie_id = mr.movie_id   
+    WHERE 
+        mr.created_at BETWEEN '2020-02-01' AND '2020-02-29'
+    GROUP BY 
+        m.title
+),
+MaxFebruaryRatings AS
+(
+    SELECT 
+        title,
+        average_rating,
+        RANK() OVER (ORDER BY average_rating DESC, title ASC) AS rank
+    FROM 
+        FebruaryRatings
+)
+
+SELECT 
+    name AS results 
+FROM 
+    MaxUserRatings 
+WHERE 
+    rank = 1
+UNION ALL
+SELECT 
+    title 
+FROM 
+    MaxFebruaryRatings 
+WHERE 
+    rank = 1;
+
+
+S pomoci ChatGPT
+WITH UserRatings AS (
+    -- Count the number of movies rated by each user
+    SELECT u.name, COUNT(mr.movie_id) AS rating_count
+    FROM Users u
+    JOIN MovieRating mr ON u.user_id = mr.user_id
+    GROUP BY u.name
+),
+MaxUser AS (
+    -- Find the user with the most ratings (handling ties by lexicographical order)
+    SELECT TOP 1 name
+    FROM UserRatings
+    WHERE rating_count = (SELECT MAX(rating_count) FROM UserRatings)
+    ORDER BY name ASC
+),
+FilteredMovies AS (
+    -- Select only ratings from February 2020
+    SELECT m.title, mr.rating
+    FROM MovieRating mr
+    JOIN Movies m ON mr.movie_id = m.movie_id
+    WHERE mr.created_at BETWEEN '2020-02-01' AND '2020-02-29'
+),
+RankedMovies AS (
+    -- Calculate the average rating for each movie in February 2020
+    SELECT title, AVG(CAST(rating AS FLOAT)) AS avg_rating
+    FROM FilteredMovies
+    GROUP BY title
+),
+MaxMovie AS (
+    -- Find the movie with the highest average rating (handling ties by lexicographical order)
+    SELECT TOP 1 title
+    FROM RankedMovies
+    WHERE avg_rating = (SELECT MAX(avg_rating) FROM RankedMovies)
+    ORDER BY title ASC
+)
+-- Combine both results into a single output
+SELECT name AS results FROM MaxUser
+UNION ALL
+SELECT title AS results FROM MaxMovie;
+
+
+*******************************************************************************
+
+Table: Customer
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| customer_id   | int     |
+| name          | varchar |
+| visited_on    | date    |
+| amount        | int     |
++---------------+---------+
+In SQL,(customer_id, visited_on) is the primary key for this table.
+This table contains data about customer transactions in a restaurant.
+visited_on is the date on which the customer with ID (customer_id) has visited the restaurant.
+amount is the total paid by a customer.
+ 
+
+You are the restaurant owner and you want to analyze a possible expansion (there will be at least one customer every day).
+
+Compute the moving average of how much the customer paid in a seven days window (i.e., current day + 6 days before). average_amount should be rounded to two decimal places.
+Return the result table ordered by visited_on in ascending order.
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Customer table:
++-------------+--------------+--------------+-------------+
+| customer_id | name         | visited_on   | amount      |
++-------------+--------------+--------------+-------------+
+| 1           | Jhon         | 2019-01-01   | 100         |
+| 2           | Daniel       | 2019-01-02   | 110         |
+| 3           | Jade         | 2019-01-03   | 120         |
+| 4           | Khaled       | 2019-01-04   | 130         |
+| 5           | Winston      | 2019-01-05   | 110         | 
+| 6           | Elvis        | 2019-01-06   | 140         | 
+| 7           | Anna         | 2019-01-07   | 150         |
+| 8           | Maria        | 2019-01-08   | 80          |
+| 9           | Jaze         | 2019-01-09   | 110         | 
+| 1           | Jhon         | 2019-01-10   | 130         | 
+| 3           | Jade         | 2019-01-10   | 150         | 
++-------------+--------------+--------------+-------------+
+Output: 
++--------------+--------------+----------------+
+| visited_on   | amount       | average_amount |
++--------------+--------------+----------------+
+| 2019-01-07   | 860          | 122.86         |
+| 2019-01-08   | 840          | 120            |
+| 2019-01-09   | 840          | 120            |
+| 2019-01-10   | 1000         | 142.86         |
++--------------+--------------+----------------+
+Explanation: 
+1st moving average from 2019-01-01 to 2019-01-07 has an average_amount of (100 + 110 + 120 + 130 + 110 + 140 + 150)/7 = 122.86
+2nd moving average from 2019-01-02 to 2019-01-08 has an average_amount of (110 + 120 + 130 + 110 + 140 + 150 + 80)/7 = 120
+3rd moving average from 2019-01-03 to 2019-01-09 has an average_amount of (120 + 130 + 110 + 140 + 150 + 80 + 110)/7 = 120
+4th moving average from 2019-01-04 to 2019-01-10 has an average_amount of (130 + 110 + 140 + 150 + 80 + 110 + 130 + 150)/7 = 142.86
+
+WITH MyCTE1 AS
+    (
+        SELECT visited_on, SUM(amount) AS amount      
+        FROM Customer 
+        GROUP BY visited_on 
+    )  
+
+SELECT visited_on,
+    SUM(amount) OVER (ORDER BY visited_on ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS amount, 
+    ROUND(AVG(amount*1.00) OVER (ORDER BY visited_on ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS average_amount
+FROM MyCTE1
+ORDER BY visited_on
+OFFSET 6 ROWS;
+
+vysvetleni OFFSET...FETCH
+Let's say you have a table named Employees with columns EmployeeID, FirstName, and LastName, and you want to retrieve the first 10 employees sorted by LastName, skipping the first 5 rows (for pagination purposes):
+
+SELECT EmployeeID, FirstName, LastName
+FROM Employees
+ORDER BY LastName
+OFFSET 5 ROWS
+FETCH NEXT 10 ROWS ONLY;
+
+In this example:
+
+ORDER BY LastName: Orders the result set by the LastName column.
+OFFSET 5 ROWS: Skips the first 5 rows of the ordered result set.
+FETCH NEXT 10 ROWS ONLY: Fetches the next 10 rows from the ordered result set after skipping the first 5 rows.
+This query will return 10 rows of data starting from the 6th row (skipping the first 5 rows) of the Employees table, ordered by LastName.
+
+vcil moje vlastni reseni, je ale pomalejsi:
+WITH CTE0 AS
+(
+    SELECT visited_on, SUM(amount) AS amount 
+    FROM Customer
+    GROUP BY visited_on
+    ), CTE AS
+(
+    SELECT visited_on, 
+        SUM(amount) OVER (ORDER BY visited_on ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS amount,
+        ROUND(AVG(CAST(amount AS FLOAT)) OVER (ORDER BY visited_on ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS average_amount
+    FROM CTE0     
+), CTE1 AS
+(
+   SELECT visited_on FROM CTE0
+   ORDER BY visited_on
+   OFFSET 6 ROWS
+   FETCH NEXT 1 ROWS ONLY
+)
+
+SELECT visited_on, amount, average_amount
+FROM CTE
+WHERE visited_on >= (SELECT visited_on FROM CTE1)
+ORDER BY visited_on ASC 
+
+dalsi reseni, castecne s ChatGPT
+WITH DailyTotals AS (
+    -- Aggregate data per day to avoid duplicate sums
+    SELECT 
+        visited_on, 
+        SUM(amount) AS daily_amount
+    FROM Customer
+    GROUP BY visited_on
+),
+MyCTE AS (
+    -- Apply window functions on daily aggregated data
+    SELECT 
+        visited_on,
+        ROW_NUMBER() OVER (ORDER BY visited_on) AS rn, -- Add row numbers to track days
+        SUM(daily_amount) OVER (
+            ORDER BY visited_on 
+            ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+        ) AS running_amount,
+        AVG(CAST(daily_amount AS DECIMAL(10,2))) OVER (
+            ORDER BY visited_on 
+            ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+        ) AS running_avg  
+    FROM DailyTotals
+)
+SELECT 
+    visited_on, 
+    running_amount AS amount,  
+    ROUND(running_avg, 2) AS average_amount  
+FROM MyCTE
+WHERE rn >= 7 
+ORDER BY visited_on;
+
+************************************************************************************************
+
+Table: RequestAccepted
+
++----------------+---------+
+| Column Name    | Type    |
++----------------+---------+
+| requester_id   | int     |
+| accepter_id    | int     |
+| accept_date    | date    |
++----------------+---------+
+(requester_id, accepter_id) is the primary key (combination of columns with unique values) for this table.
+This table contains the ID of the user who sent the request, the ID of the user who received the request, and the date when the request was accepted.
+ 
+
+Write a solution to find the people who have the most friends and the most friends number.
+
+The test cases are generated so that only one person has the most friends.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+RequestAccepted table:
++--------------+-------------+-------------+
+| requester_id | accepter_id | accept_date |
++--------------+-------------+-------------+
+| 1            | 2           | 2016/06/03  |
+| 1            | 3           | 2016/06/08  |
+| 2            | 3           | 2016/06/08  |
+| 3            | 4           | 2016/06/09  |
++--------------+-------------+-------------+
+Output: 
++----+-----+
+| id | num |
++----+-----+
+| 3  | 3   |
++----+-----+
+Explanation: 
+The person with id 3 is a friend of people 1, 2, and 4, so he has three friends in total, which is the most number than any others.
+ 
+
+WITH MyCTE1 AS
+(
+    SELECT requester_id AS result
+    FROM RequestAccepted
+
+    UNION ALL
+
+    SELECT accepter_id AS result
+    FROM RequestAccepted
+)
+
+| result| 
++------------+
+| 1                   
+| 1          |
+| 2          |
+| 3          |  
+| 2          |
+| 3          |
+| 3          |
+| 4          |
++-----------+
+
+vsimni si, jak slozite dostavame z predchozi CTE (obecne z libovolne table) maximalni pocet cisel a hodnotu daneho cisla
+
+SELECT
+    (
+        SELECT TOP 1 result
+        FROM (
+            SELECT result, COUNT(result) AS result_count,
+                   ROW_NUMBER() OVER (ORDER BY COUNT(result) DESC) AS rn
+            FROM MyCTE1    
+            GROUP BY result
+        ) AS ranked_results
+        WHERE rn = 1
+    ) AS id,
+    (
+        SELECT MAX(result_count)
+        FROM (
+            SELECT result, COUNT(result) AS result_count
+            FROM MyCTE1    
+            GROUP BY result
+        ) AS counts
+    ) AS num;
+
+
+nove rychlejsi reseni:
+
+WITH CTE1 AS
+(
+    SELECT r2.accepter_id AS requester_id
+    FROM RequestAccepted r2
+    UNION ALL 
+    SELECT r1.requester_id  
+    FROM RequestAccepted r1   
+), CTE2 AS
+(
+    SELECT requester_id AS id, COUNT(requester_id) AS num FROM CTE1
+    GROUP BY requester_id
+)
+
+SELECT id, num FROM CTE2
+WHERE num = (SELECT MAX(num) FROM CTE2)
+
+********************************************************
+
+Table: Insurance
+
++-------------+-------+
+| Column Name | Type  |
++-------------+-------+
+| pid         | int   |
+| tiv_2015    | float |
+| tiv_2016    | float |
+| lat         | float |
+| lon         | float |
++-------------+-------+
+pid is the primary key (column with unique values) for this table.
+Each row of this table contains information about one policy where:
+pid is the policyholder's policy ID.
+tiv_2015 is the total investment value in 2015 and tiv_2016 is the total investment value in 2016.
+lat is the latitude of the policy holder's city. It's guaranteed that lat is not NULL.
+lon is the longitude of the policy holder's city. It's guaranteed that lon is not NULL.
+ 
+
+Write a solution to report the sum of all total investment values in 2016 tiv_2016, for all policyholders who:
+
+have the same tiv_2015 value as one or more other policyholders, and
+are not located in the same city as any other policyholder (i.e., the (lat, lon) attribute pairs must be unique).
+Round tiv_2016 to two decimal places.
+
+The result format is in the following example.
+
+Example 1:
+
+Input: 
+Insurance table:
++-----+----------+----------+-----+-----+
+| pid | tiv_2015 | tiv_2016 | lat | lon |
++-----+----------+----------+-----+-----+
+| 1   | 10       | 5        | 10  | 10  |
+| 2   | 20       | 20       | 20  | 20  |
+| 3   | 10       | 30       | 20  | 20  |
+| 4   | 10       | 40       | 40  | 40  |
++-----+----------+----------+-----+-----+
+Output: 
++----------+
+| tiv_2016 |
++----------+
+| 45.00    |
++----------+
+Explanation: 
+The first record in the table, like the last record, meets both of the two criteria.
+The tiv_2015 value 10 is the same as the third and fourth records, and its location is unique.
+
+The second record does not meet any of the two criteria. Its tiv_2015 is not like any other policyholders and its location is the same as the third record, which makes the third record fail, too.
+So, the result is the sum of tiv_2016 of the first and last record, which is 45.
+
+SELECT ROUND(SUM(tiv_2016), 2) AS tiv_2016
+FROM (
+    SELECT *,
+        COUNT(*) OVER (PARTITION BY lat, lon) AS numb,
+        COUNT(*) OVER (PARTITION BY tiv_2015) AS tf
+    FROM Insurance
+) AS a
+WHERE tf > 1 AND numb = 1;
+
+rychlejsi reseni:
+
+WITH CTE_LatLon AS
+(
+    SELECT lat, lon
+    FROM Insurance
+    GROUP BY lat, lon
+    HAVING COUNT(*) = 1
+), CTE_TIV AS
+(
+    SELECT tiv_2015
+    FROM Insurance
+    GROUP BY tiv_2015
+    HAVING COUNT(*) >= 2
+)
+
+SELECT ROUND(SUM(tiv_2016), 2) AS tiv_2016
+FROM Insurance i
+WHERE EXISTS (
+    SELECT 1
+    FROM CTE_LatLon ll
+    WHERE ll.lat = i.lat AND ll.lon = i.lon
+)
+AND EXISTS (
+    SELECT 1
+    FROM CTE_TIV t
+    WHERE t.tiv_2015 = i.tiv_2015
+);
+
+Dalsi reseni
+WITH MyCTE AS
+(
+    SELECT tiv_2016, pid, lat, lon
+    FROM Insurance
+    WHERE tiv_2015 IN (
+        SELECT tiv_2015
+        FROM Insurance
+        GROUP BY tiv_2015
+        HAVING COUNT(tiv_2015) > 1
+    )
+    AND lat IN (
+        SELECT lat
+        FROM Insurance
+        GROUP BY lat, lon
+        HAVING COUNT(lat) = 1
+    )
+    AND lon IN (
+        SELECT lon
+        FROM Insurance
+        GROUP BY lat, lon
+        HAVING COUNT(lon) = 1
+    )
+)
+
+SELECT ROUND (SUM(tiv_2016), 2) AS tiv_2016
+FROM MyCTE
+
+
+*********************************************************
+
+Table: Employee
+
++--------------+---------+
+| Column Name  | Type    |
++--------------+---------+
+| id           | int     |
+| name         | varchar |
+| salary       | int     |
+| departmentId | int     |
++--------------+---------+
+id is the primary key (column with unique values) for this table.
+departmentId is a foreign key (reference column) of the ID from the Department table.
+Each row of this table indicates the ID, name, and salary of an employee. It also contains the ID of their department.
+ 
+
+Table: Department
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| id          | int     |
+| name        | varchar |
++-------------+---------+
+id is the primary key (column with unique values) for this table.
+Each row of this table indicates the ID of a department and its name.
+ 
+
+A company's executives are interested in seeing who earns the most money in each of the company's departments. A high earner in a department is an employee who has a salary in the top three unique salaries for that department.
+
+Write a solution to find the employees who are high earners in each of the departments.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Employee table:
++----+-------+--------+--------------+
+| id | name  | salary | departmentId |
++----+-------+--------+--------------+
+| 1  | Joe   | 85000  | 1            |
+| 2  | Henry | 80000  | 2            |
+| 3  | Sam   | 60000  | 2            |
+| 4  | Max   | 90000  | 1            |
+| 5  | Janet | 69000  | 1            |
+| 6  | Randy | 85000  | 1            |
+| 7  | Will  | 70000  | 1            |
++----+-------+--------+--------------+
+Department table:
++----+-------+
+| id | name  |
++----+-------+
+| 1  | IT    |
+| 2  | Sales |
++----+-------+
+Output: 
++------------+----------+--------+
+| Department | Employee | Salary |
++------------+----------+--------+
+| IT         | Max      | 90000  |
+| IT         | Joe      | 85000  |
+| IT         | Randy    | 85000  |
+| IT         | Will     | 70000  |
+| Sales      | Henry    | 80000  |
+| Sales      | Sam      | 60000  |
++------------+----------+--------+
+Explanation: 
+In the IT department:
+- Max earns the highest unique salary
+- Both Randy and Joe earn the second-highest unique salary
+- Will earns the third-highest unique salary
+
+In the Sales department:
+- Henry earns the highest salary
+- Sam earns the second-highest salary
+- There is no third-highest salary as there are only two employees
+
+
+WITH RankedEmployees AS (
+    SELECT 
+        e.id AS EmployeeId, 
+        e.name AS Employee, 
+        e.salary AS Salary, 
+        d.name AS Department,
+        DENSE_RANK() OVER (PARTITION BY e.departmentId ORDER BY e.salary DESC) AS SalaryRank
+    FROM Employee e
+    JOIN Department d ON e.departmentId = d.id
+)
+
+SELECT Department, Employee, Salary
+FROM RankedEmployees
+WHERE SalaryRank <= 3  -- Include all employees within the top 3 highest salaries per department
+ORDER BY Department, Salary DESC;
+
+moje rychlejsi reseni, nez vyse uvedene od ChatGPT:
+WITH CTE1 AS (
+    SELECT e.id AS Employee_Id, e.name AS Employee, e.salary AS Salary, d.name AS Department  
+    FROM Employee e
+    JOIN Department d
+    ON e.departmentId = d.id
+), CTE2 AS
+(
+    SELECT Department, Employee, Salary,
+        DENSE_RANK() OVER(PARTITION BY Department
+        ORDER BY Salary DESC) AS rn
+        --quli pozadavku na 3 unikatni vyplaty neni row_number
+    FROM CTE1
+), CTE3 AS
+(
+    SELECT Department, Employee, Salary, rn
+    FROM CTE2
+    WHERE rn <= 3
+)
+
+SELECT c2.Department, c2.Employee, c2.Salary
+FROM CTE2 c2
+-- toto bohuzel nelze ON c2.Salary IN c3.Salary AND c2.Department = c3.Department 
+-- proto slozitejsi kod s exists
+WHERE EXISTS (
+    SELECT 1
+    FROM CTE3 c3
+    WHERE c2.Salary = c3.Salary AND c2.Department = c3.Department
+);
+
+dalsi reseni vetsinou s pomoci ChatGPT, bo mne to nebavilo
+
+WITH RankedEmployees AS (
+    SELECT e.id, e.name AS Employee, e.salary, e.departmentId, d.name AS Department,
+           DENSE_RANK() OVER (PARTITION BY e.departmentId ORDER BY e.salary DESC) AS Rank
+    FROM Employee e
+    INNER JOIN Department d
+    ON e.departmentId = d.id  
+)
+SELECT Department, Employee, Salary
+FROM RankedEmployees
+WHERE Rank <= 3
+ORDER BY Department, Salary DESC;
+
+********************************************************************************************************
+Table: Users
+
++----------------+---------+
+| Column Name    | Type    |
++----------------+---------+
+| user_id        | int     |
+| name           | varchar |
++----------------+---------+
+user_id is the primary key (column with unique values) for this table.
+This table contains the ID and the name of the user. The name consists of only lowercase and uppercase characters.
+ 
+
+Write a solution to fix the names so that only the first character is uppercase and the rest are lowercase.
+
+Return the result table ordered by user_id.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Users table:
++---------+-------+
+| user_id | name  |
++---------+-------+
+| 1       | aLice |
+| 2       | bOB   |
++---------+-------+
+Output: 
++---------+-------+
+| user_id | name  |
++---------+-------+
+| 1       | Alice |
+| 2       | Bob   |
++---------+-------+
+
+WITH MyCTE AS
+(
+    SELECT user_id, LOWER(name) AS name, UPPER(LEFT(name, 1)) AS first_char
+    FROM Users 
+)
+
+SELECT user_id, STUFF(name, 1, 1, first_char) AS name
+FROM MyCTE 
+ORDER BY user_id
+
+udajne rychlejsi reseni:
+WITH CTE AS
+(
+    SELECT user_id, LOWER(name) AS name
+    FROM Users
+)
+
+SELECT user_id,
+(
+    CONCAT(UPPER(LEFT(name, 1)), SUBSTRING(name, 2, LEN(name) - 1))
+)
+AS name
+FROM CTE
+ORDER BY user_id
+
+***************************************************************************
+Table: Patients
+
++--------------+---------+
+| Column Name  | Type    |
++--------------+---------+
+| patient_id   | int     |
+| patient_name | varchar |
+| conditions   | varchar |
++--------------+---------+
+patient_id is the primary key (column with unique values) for this table.
+'conditions' contains 0 or more code separated by spaces. 
+This table contains information of the patients in the hospital.
+ 
+
+Write a solution to find the patient_id, patient_name, and conditions of the patients who have Type I Diabetes. Type I Diabetes always starts with DIAB1 prefix.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+Example 1:
+
+Input: 
+Patients table:
++------------+--------------+--------------+
+| patient_id | patient_name | conditions   |
++------------+--------------+--------------+
+| 1          | Daniel       | YFEV COUGH   |
+| 2          | Alice        |              |
+| 3          | Bob          | DIAB100 MYOP |
+| 4          | George       | ACNE DIAB100 |
+| 5          | Alain        | DIAB201      |
++------------+--------------+--------------+
+Output: 
++------------+--------------+--------------+
+| patient_id | patient_name | conditions   |
++------------+--------------+--------------+
+| 3          | Bob          | DIAB100 MYOP |
+| 4          | George       | ACNE DIAB100 | 
++------------+--------------+--------------+
+Explanation: Bob and George both have a condition that starts with DIAB1.
+
+/* Write your T-SQL query statement below */
+SELECT patient_id, patient_name, conditions
+FROM Patients 
+WHERE conditions LIKE '% DIAB1%' OR LEFT(conditions, 5) = 'DIAB1';
+
+SELECT patient_id, patient_name, conditions
+FROM Patients 
+WHERE conditions LIKE 'DIAB1%' OR conditions LIKE '% DIAB1%' OR conditions LIKE '% DIAB1'
+
+SELECT patient_id, patient_name, conditions
+FROM Patients
+WHERE LEFT(conditions, 5) = 'DIAB1' OR CHARINDEX(' DIAB1', conditions) > 0
+
+***********************************************************************************
+
+Table: Person
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| id          | int     |
+| email       | varchar |
++-------------+---------+
+id is the primary key (column with unique values) for this table.
+Each row of this table contains an email. The emails will not contain uppercase letters.
+ 
+
+Write a solution to delete all duplicate emails, keeping only one unique email with the smallest id.
+
+For SQL users, please note that you are supposed to write a DELETE statement and not a SELECT one.
+
+For Pandas users, please note that you are supposed to modify Person in place.
+
+After running your script, the answer shown is the Person table. The driver will first compile and run your piece of code and then show the Person table. The final order of the Person table does not matter.
+
+The result format is in the following example.
+
+Example 1:
+
+Input: 
+Person table:
++----+------------------+
+| id | email            |
++----+------------------+
+| 1  | john@example.com |
+| 2  | bob@example.com  |
+| 3  | john@example.com |
++----+------------------+
+Output: 
++----+------------------+
+| id | email            |
++----+------------------+
+| 1  | john@example.com |
+| 2  | bob@example.com  |
++----+------------------+
+Explanation: john@example.com is repeated two times. We keep the row with the smallest Id = 1.
+
+DELETE FROM Person
+WHERE id NOT IN (
+    SELECT MIN(id)
+    FROM Person
+    GROUP BY email
+);
+
+nebo dalsi moje reseni:
+
+WITH MyCTE AS
+(
+    SELECT    
+    id, email, ROW_NUMBER() OVER (PARTITION BY email ORDER BY id) AS rn 
+    FROM Person
+)
+
+DELETE FROM MyCTE
+WHERE rn <> 1
+
+nyni ChatGPT to zrobil udajne rychlejsi, ale slozite:
+WITH DuplicateEmails AS (
+    SELECT email, MIN(id) AS KeepId
+    FROM Person
+    GROUP BY email
+    HAVING COUNT(email) > 1
+), ToDelete AS (
+    SELECT p.id
+    FROM Person p
+    LEFT JOIN DuplicateEmails de ON p.email = de.email
+    WHERE de.email IS NOT NULL AND p.id <> de.KeepId
+)
+
+DELETE FROM Person
+WHERE id IN (SELECT id FROM ToDelete);
+
+**********************************************************************************************
+
+Table: Employee
+
++-------------+------+
+| Column Name | Type |
++-------------+------+
+| id          | int  |
+| salary      | int  |
++-------------+------+
+id is the primary key (column with unique values) for this table.
+Each row of this table contains information about the salary of an employee.
+ 
+
+Write a solution to find the second highest salary from the Employee table. If there is no second highest salary, return null (return None in Pandas).
+
+The result format is in the following example.
+ 
+Example 1:
+
+Input: 
+Employee table:
++----+--------+
+| id | salary |
++----+--------+
+| 1  | 100    |
+| 2  | 200    |
+| 3  | 300    |
++----+--------+
+Output: 
++---------------------+
+| SecondHighestSalary |
++---------------------+
+| 200                 |
++---------------------+
+Example 2:
+
+Input: 
+Employee table:
++----+--------+
+| id | salary |
++----+--------+
+| 1  | 100    |
++----+--------+
+Output: 
++---------------------+
+| SecondHighestSalary |
++---------------------+
+| null                |
++---------------------+
+
+SELECT TOP 1 LEAD(salary) OVER (ORDER BY salary DESC) AS SecondHighestSalary 
+FROM (SELECT DISTINCT salary FROM employee) DerivedTable
+ORDER BY salary DESC;
+--In SQL, when you use a subquery in the FROM clause to create a derived table,
+--you need to provide an alias for that derived table. 
+
+moje vlastni reseni, ale zhruba stejne pomale, jako od ChatGPT:
+WITH CTE AS
+(
+    SELECT id, salary,
+        ROW_NUMBER() OVER(PARTITION BY salary ORDER BY salary DESC) AS rn
+    FROM Employee 
+)
+
+SELECT TOP 1
+    LEAD(salary, 1, NULL) OVER(ORDER BY salary DESC)
+    AS SecondHighestSalary
+FROM CTE
+WHERE rn = 1
+ORDER BY salary DESC
+
+dalsi reseni, castecne s pomoci ChatGPT
+WITH MyCTE AS
+(
+    SELECT    
+        salary, 
+        DENSE_RANK() OVER (ORDER BY salary DESC) AS rnk 
+    FROM Employee
+),
+
+FilteredCTE AS
+(
+    SELECT MAX(salary) AS SecondHighestSalary
+    FROM MyCTE
+    WHERE rnk = 2
+)
+
+SELECT 
+    CASE 
+        WHEN (SELECT COUNT(*) FROM FilteredCTE) = 0 THEN NULL 
+        ELSE (SELECT SecondHighestSalary FROM FilteredCTE) 
+    END AS SecondHighestSalary
+
+*********************************************************************
+
+Table Activities:
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| sell_date   | date    |
+| product     | varchar |
++-------------+---------+
+There is no primary key (column with unique values) for this table. It may contain duplicates.
+Each row of this table contains the product name and the date it was sold in a market.
+ 
+
+Write a solution to find for each date the number of different products sold and their names.
+
+The sold products names for each date should be sorted lexicographically.
+
+Return the result table ordered by sell_date.
+
+The result format is in the following example.
+
+Example 1:
+
+Input: 
+Activities table:
++------------+------------+
+| sell_date  | product     |
++------------+------------+
+| 2020-05-30 | Headphone  |
+| 2020-06-01 | Pencil     |
+| 2020-06-02 | Mask       |
+| 2020-05-30 | Basketball |
+| 2020-06-01 | Bible      |
+| 2020-06-02 | Mask       |
+| 2020-05-30 | T-Shirt    |
++------------+------------+
+Output: 
++------------+----------+------------------------------+
+| sell_date  | num_sold | products                     |
++------------+----------+------------------------------+
+| 2020-05-30 | 3        | Basketball,Headphone,T-shirt |
+| 2020-06-01 | 2        | Bible,Pencil                 |
+| 2020-06-02 | 1        | Mask                         |
++------------+----------+------------------------------+
+Explanation: 
+For 2020-05-30, Sold items were (Headphone, Basketball, T-shirt), we sort them lexicographically and separate them by a comma.
+For 2020-06-01, Sold items were (Pencil, Bible), we sort them lexicographically and separate them by a comma.
+For 2020-06-02, the Sold item is (Mask), we just return it.
+
+***********************************************
+
+Table Activities:
+
++-------------+---------+
+| Column Name | Type    |
++-------------+---------+
+| sell_date   | date    |
+| product     | varchar |
++-------------+---------+
+There is no primary key (column with unique values) for this table. It may contain duplicates.
+Each row of this table contains the product name and the date it was sold in a market.
+ 
+
+Write a solution to find for each date the number of different products sold and their names.
+
+The sold products names for each date should be sorted lexicographically.
+
+Return the result table ordered by sell_date.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Activities table:
++------------+------------+
+| sell_date  | product     |
++------------+------------+
+| 2020-05-30 | Headphone  |
+| 2020-06-01 | Pencil     |
+| 2020-06-02 | Mask       |
+| 2020-05-30 | Basketball |
+| 2020-06-01 | Bible      |
+| 2020-06-02 | Mask       |
+| 2020-05-30 | T-Shirt    |
++------------+------------+
+Output: 
++------------+----------+------------------------------+
+| sell_date  | num_sold | products                     |
++------------+----------+------------------------------+
+| 2020-05-30 | 3        | Basketball,Headphone,T-shirt |
+| 2020-06-01 | 2        | Bible,Pencil                 |
+| 2020-06-02 | 1        | Mask                         |
++------------+----------+------------------------------+
+Explanation: 
+For 2020-05-30, Sold items were (Headphone, Basketball, T-shirt), we sort them lexicographically and separate them by a comma.
+For 2020-06-01, Sold items were (Pencil, Bible), we sort them lexicographically and separate them by a comma.
+For 2020-06-02, the Sold item is (Mask), we just return it.
+
+
+SELECT sell_date,
+       COUNT(product) AS num_sold,
+       STRING_AGG(product, ',') WITHIN GROUP (ORDER BY product ASC) AS products
+FROM (
+    SELECT DISTINCT sell_date, product
+    FROM Activities
+) AS subquery
+GROUP BY sell_date
+ORDER BY sell_date;
+
+moje rychlejsi reseni:
+WITH CTE AS
+(
+    SELECT DISTINCT sell_date, product  
+    FROM Activities   
+), CTE1 AS
+(
+    SELECT sell_date, COUNT(product) AS num_sold, STRING_AGG(product, ',') AS products 
+    FROM CTE
+    GROUP BY sell_date  
+)
+
+SELECT * FROM CTE1
+ORDER BY sell_date;
+
+--dalsi moje reseni (ono v podstate varianta vyse uvedeneho, jen s derived table misto CTE):
+SELECT sell_date, COUNT(*) AS num_sold, STRING_AGG (product, ',') AS products
+FROM (
+    SELECT DISTINCT sell_date, product
+    FROM Activities
+) AS DistinctActivities
+GROUP BY sell_date  
+
+***************************************************************************************
+
+ |
++---------------+---------+
+| product_id    | int     |
+| order_date    | date    |
+| unit          | int     |
++---------------+---------+
+This table may have duplicate rows.
+product_id is a foreign key (reference column) to the Products table.
+unit is the number of products ordered in order_date.
+ 
+
+Write a solution to get the names of products that have at least 100 units ordered in February 2020 and their amount.
+
+Return the result table in any order.
+
+The result format is in the following example.
+
+Example 1:
+
+Input: 
+Products table:
++-------------+-----------------------+------------------+
+| product_id  | product_name          | product_category |
++-------------+-----------------------+------------------+
+| 1           | Leetcode Solutions    | Book             |
+| 2           | Jewels of Stringology | Book             |
+| 3           | HP                    | Laptop           |
+| 4           | Lenovo                | Laptop           |
+| 5           | Leetcode Kit          | T-shirt          |
++-------------+-----------------------+------------------+
+Orders table:
++--------------+--------------+----------+
+| product_id   | order_date   | unit     |
++--------------+--------------+----------+
+| 1            | 2020-02-05   | 60       |
+| 1            | 2020-02-10   | 70       |
+| 2            | 2020-01-18   | 30       |
+| 2            | 2020-02-11   | 80       |
+| 3            | 2020-02-17   | 2        |
+| 3            | 2020-02-24   | 3        |
+| 4            | 2020-03-01   | 20       |
+| 4            | 2020-03-04   | 30       |
+| 4            | 2020-03-04   | 60       |
+| 5            | 2020-02-25   | 50       |
+| 5            | 2020-02-27   | 50       |
+| 5            | 2020-03-01   | 50       |
++--------------+--------------+----------+
+Output: 
++--------------------+---------+
+| product_name       | unit    |
++--------------------+---------+
+| Leetcode Solutions | 130     |
+| Leetcode Kit       | 100     |
++--------------------+---------+
+Explanation: 
+Products with product_id = 1 is ordered in February a total of (60 + 70) = 130.
+Products with product_id = 2 is ordered in February a total of 80.
+Products with product_id = 3 is ordered in February a total of (2 + 3) = 5.
+Products with product_id = 4 was not ordered in February 2020.
+Products with product_id = 5 is ordered in February a total of (50 + 50) = 100.
+
+***********************************************************************************
+Table: Products
+
++------------------+---------+
+| Column Name      | Type    |
++------------------+---------+
+| product_id       | int     |
+| product_name     | varchar |
+| product_category | varchar |
++------------------+---------+
+product_id is the primary key (column with unique values) for this table.
+This table contains data about the company's products.
+ 
+
+Table: Orders
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| product_id    | int     |
+| order_date    | date    |
+| unit          | int     |
++---------------+---------+
+This table may have duplicate rows.
+product_id is a foreign key (reference column) to the Products table.
+unit is the number of products ordered in order_date.
+ 
+
+Write a solution to get the names of products that have at least 100 units ordered in February 2020 and their amount.
+
+Return the result table in any order.
+
+The result format is in the following example.
+ 
+
+Example 1:
+
+Input: 
+Products table:
++-------------+-----------------------+------------------+
+| product_id  | product_name          | product_category |
++-------------+-----------------------+------------------+
+| 1           | Leetcode Solutions    | Book             |
+| 2           | Jewels of Stringology | Book             |
+| 3           | HP                    | Laptop           |
+| 4           | Lenovo                | Laptop           |
+| 5           | Leetcode Kit          | T-shirt          |
++-------------+-----------------------+------------------+
+Orders table:
++--------------+--------------+----------+
+| product_id   | order_date   | unit     |
++--------------+--------------+----------+
+| 1            | 2020-02-05   | 60       |
+| 1            | 2020-02-10   | 70       |
+| 2            | 2020-01-18   | 30       |
+| 2            | 2020-02-11   | 80       |
+| 3            | 2020-02-17   | 2        |
+| 3            | 2020-02-24   | 3        |
+| 4            | 2020-03-01   | 20       |
+| 4            | 2020-03-04   | 30       |
+| 4            | 2020-03-04   | 60       |
+| 5            | 2020-02-25   | 50       |
+| 5            | 2020-02-27   | 50       |
+| 5            | 2020-03-01   | 50       |
++--------------+--------------+----------+
+Output: 
++--------------------+---------+
+| product_name       | unit    |
++--------------------+---------+
+| Leetcode Solutions | 130     |
+| Leetcode Kit       | 100     |
++--------------------+---------+
+Explanation: 
+Products with product_id = 1 is ordered in February a total of (60 + 70) = 130.
+Products with product_id = 2 is ordered in February a total of 80.
+Products with product_id = 3 is ordered in February a total of (2 + 3) = 5.
+Products with product_id = 4 was not ordered in February 2020.
+Products with product_id = 5 is ordered in February a total of (50 + 50) = 100.
+
+
+SELECT DISTINCT p.product_name, SUM(o.unit) AS unit
+FROM Products p
+INNER JOIN Orders o 
+ON p.product_id = o.product_id
+WHERE o.order_date BETWEEN '2020-02-01' AND '2020-02-29'
+GROUP BY p.product_id, p.product_name
+HAVING SUM(o.unit) >= 100;
+
+muj delsi kod, ale 2x rychlejsi:
+WITH CTE AS
+(
+    SELECT p.product_id, p.product_name, p.product_category, o.order_date, o.unit
+    FROM Products p
+    JOIN Orders o -- LEFT JOIN -- FULL OUTER JOIN
+    ON p.product_id = o.product_id AND o.order_date BETWEEN '2020-02-01' AND '2020-02-29' 
+)
+
+SELECT product_name, 
+(
+    SUM(unit)
+)
+AS unit 
+FROM CTE
+GROUP BY product_name
+HAVING SUM(unit) >= 100 AND product_name IS NOT NULL
+
+trochu to lze zkratit:
+WITH MyCTE AS
+(
+    SELECT p.product_name, o.unit 
+    FROM Products p
+    INNER JOIN Orders o
+    ON p.product_id = o.product_id AND o.order_date BETWEEN '2020-02-01' AND '2020-02-29'  
+)
+
+SELECT product_name, SUM(unit) AS unit
+FROM MyCTE
+GROUP BY product_name
+HAVING SUM(unit) >= 100 
+
+**************************************************************************************************************
+
+Table: Users
+
++---------------+---------+
+| Column Name   | Type    |
++---------------+---------+
+| user_id       | int     |
+| name          | varchar |
+| mail          | varchar |
++---------------+---------+
+user_id is the primary key (column with unique values) for this table.
+This table contains information of the users signed up in a website. Some e-mails are invalid.
+ 
+
+Write a solution to find the users who have valid emails.
+
+A valid e-mail has a prefix name and a domain where:
+
+The prefix name is a string that may contain letters (upper or lower case), digits, underscore '_', period '.', and/or dash '-'. The prefix name must start with a letter.
+The domain is '@leetcode.com'.
+Return the result table in any order.
+
+The result format is in the following example.
+
+ 
+
+Example 1:
+
+Input: 
+Users table:
++---------+-----------+-------------------------+
+| user_id | name      | mail                    |
++---------+-----------+-------------------------+
+| 1       | Winston   | winston@leetcode.com    |
+| 2       | Jonathan  | jonathanisgreat         |
+| 3       | Annabelle | bella-@leetcode.com     |
+| 4       | Sally     | sally.come@leetcode.com |
+| 5       | Marwan    | quarz#2020@leetcode.com |
+| 6       | David     | david69@gmail.com       |
+| 7       | Shapiro   | .shapo@leetcode.com     |
++---------+-----------+-------------------------+
+Output: 
++---------+-----------+-------------------------+
+| user_id | name      | mail                    |
++---------+-----------+-------------------------+
+| 1       | Winston   | winston@leetcode.com    |
+| 3       | Annabelle | bella-@leetcode.com     |
+| 4       | Sally     | sally.come@leetcode.com |
++---------+-----------+-------------------------+
+Explanation: 
+The mail of user 2 does not have a domain.
+The mail of user 5 has the # sign which is not allowed.
+The mail of user 6 does not have the leetcode domain.
+The mail of user 7 starts with a period.
+
+
+SELECT user_id, [name], mail 
+FROM Users 
+WHERE mail LIKE '[a-zA-Z]%@leetcode.com' AND mail NOT LIKE '%[^a-zA-Z0-9_.-]%@leetcode.com'
+
+nebo takto:
+SELECT user_id, name, mail
+FROM Users
+WHERE mail LIKE '%@leetcode.com'
+  AND mail LIKE '[A-Za-z]%'
+  AND mail NOT LIKE '%[^A-Za-z0-9._@-]%'
+  AND mail NOT LIKE '%@%@%';
+
+*********************************************************************************************************
+
+
+
+
+
+
+

@@ -1,0 +1,133 @@
+﻿Poznámka 1
+
+(*
+Rozdil oproti prednasce (pouze cast tykajici se normalizace)
+torch.nn.LayerNorm pocita v pozadi to, co je manualne v C# kodu v miste 1:24:28 - scale, shift, mean, variance
+Less flexible, as LayerNorm uses default settings (e.g., epsilon = 1E-5 by default in TorchSharp/PyTorch), but you can customize it via optional parameters if needed.            
+*) 
+
+(*
+Rozdil oproti prednasce (pouze cast tykajici se feed-forward) - gelu a Linear jsou primo z knihovny, gelu je z torch.nn.functional
+let feedForward1 = Linear(dModel, dModel * 4L) // Feed-forward network (first layer).
+let feedForward2 = Linear(dModel * 4L, dModel) // Feed-forward network (second layer).
+            
+V prednasce je plny kod v C# (funkcionalita by mela byt totozna), coz je lepsi pro vysvetleni
+public class FeedForward : torch.nn.Module<torch.Tensor, torch.Tensor>
+{
+    internal readonly torch.nn.Sequential layers;
+            
+    public FeedForward(GptConfiguration config) : base(nameof(FeedForward))
+    {
+        layers = torch.nn.Sequential(
+            torch.nn.Linear(inputSize: config.EmbeddingDimensions, outputSize: 4 * config.EmbeddingDimensions),
+            new torch.nn.GELU(),
+            torch.nn.Linear(inputSize: 4 * config.EmbeddingDimensions, outputSize: config.EmbeddingDimensions)
+        );
+    }
+            
+    public override torch.Tensor forward(torch.Tensor input)
+    {
+        return layers.forward(input);
+    }
+}
+
+GELU v PyTorch je aktualne jako default uz plny vypocet, aproximace s tanh je volitelna, jak je to aktualne v TorchSharp jsem nezjistil.
+https://docs.pytorch.org/docs/stable/generated/torch.nn.GELU.html
+*)
+
+(*
+//takto je feed-forward v prednasce od Tomáše Hercega
+public override torch.Tensor forward(torch.Tensor input)
+{
+    var shortcut = input;                                // Save input for residual connection
+    input = normalizationLayer1.forward(input);          // Normalize before attention
+    input = attention.forward(input);                    // Apply attention
+    input = dropout.forward(input);                      // Apply dropout
+    input = input + shortcut;                            // Residual connection
+            
+    shortcut = input;                                    // Update shortcut for next sub-layer
+    input = normalizationLayer2.forward(input);          // Normalize before feed-forward
+    input = feedForward.forward(input);                  // Apply feed-forward network
+    input = dropout.forward(input);                      // Apply dropout
+    return input + shortcut;                             // Residual connection
+}            
+*)
+
+Poznámka 2
+
+//learnable Positional Encodings - toto je v C# prednasce od Tomáše Hercega (převedeno do F#)
+(*
+let posIndices = torch.arange(seqLen, device=x.device)
+let posEnc = positionEmbedding.forward(posIndices)
+let embWithPos = emb + posEnc
+*)
+ 
+ 
+Poznámka 3
+
+(*
+//ekvivalentni kod v přednášce Tomáše Hercega vypadá nějak takto:
+
+public string GenerateText(string text, float temperature = 1.0f, int topK = 50, int maxNewTokens = 50)
+{    
+    var inputTokenIds = tokenizer.EncodeToIds(text).ToArray();
+    var input = torch.tensor(inputTokenIds, dtype: torch.int64).unsqueeze(0); 
+
+    model.eval();
+
+    using (torch.no_grad())
+    {
+        for (int i = 0; i < maxNewTokens; i++)
+        {
+            if (input.shape[1] > config.ContextSize)
+            {
+                input = input.slice(dim: 1, start: input.shape[1] - config.ContextSize, end: input.shape[1]);
+            }
+
+            var output = model.forward(input); // Shape: [1, seqLen, vocabSize]
+            var lastLogit = output.slice(dim: 1, start: output.shape[1] - 1, end: output.shape[1]).squeeze(1); // Shape: [1, vocabSize]
+
+            if (i == 0)
+            {
+                lastLogit.index_fill_(dim: 0, index: torch.tensor(new[] { 50256L }, device: lastLogit.device), value: float.NegativeInfinity);
+            }
+
+            lastLogit = lastLogit / temperature;
+
+            int effectiveTopK = Math.Min(topK, config.VocabSize); // Ensure topK <= vocabSize
+            if (effectiveTopK <= 0)
+                throw new ArgumentException("topK must be positive and not exceed vocabulary size");
+
+            var (bestValues, bestIndices) = torch.topk(lastLogit, k: effectiveTopK, dim: -1); // Shape: [1, topK]
+            var filteredOutput = torch.where(lastLogit < bestValues[0, effectiveTopK - 1], torch.tensor(float.NegativeInfinity, device: lastLogit.device), lastLogit);
+            var probabilities = torch.softmax(filteredOutput, dim: -1); // Shape: [1, vocabSize]
+            var nextToken = torch.multinomial(probabilities, num_samples: 1); // Shape: [1, 1]
+            var nextTokenId = nextToken.data<long>().Single(); // Extract scalar token ID
+
+            if (nextTokenId == 50256L)
+            {
+                break;
+            }
+
+            input = torch.cat(new[] { input, nextToken }, dim: 1);
+        }
+    }
+
+    var outputTokenIds = input.squeeze(0).data<long>().Select(c => (int)c).ToArray();
+    return tokenizer.Decode(outputTokenIds.Skip(inputTokenIds.Length).ToArray());
+}    
+*)
+
+
+## ✅ What Is LoRA?
+
+**LoRA** injects **low-rank trainable matrices** into existing linear layers (e.g., `nn.Linear` in attention) while **freezing the original weights**. It’s especially useful for adapting large models efficiently.
+
+In brief:
+
+```
+Instead of updating W (original weight):
+Let ΔW = A @ B  (low-rank)
+Then:
+Output = (W + ΔW) x input
+```
