@@ -1,5 +1,7 @@
 ﻿module DerivedTablesTSQL //buzzword FROM, strucna charakteristika: virtualni castecna tabulka, abychom nemuseli dotazovat celou table
 
+//Derived table je vlastne specialni druh subqueries
+
 (*
     SELECT OperatorID, FirstName, LastName, JobTitle
     FROM (
