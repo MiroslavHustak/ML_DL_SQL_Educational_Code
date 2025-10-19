@@ -940,6 +940,15 @@ END AS average_price
 FROM Prices p
 LEFT JOIN UnitsSold u
 ON p.product_id = u.product_id AND u.purchase_date BETWEEN p.start_date AND p.end_date
+
+dalsi reseni
+SELECT p.product_id, 
+       COALESCE(ROUND(SUM(p.price * COALESCE(u.units, 0)) / NULLIF(SUM(u.units), 0), 2), 0.00) AS average_price
+FROM Prices p
+LEFT JOIN UnitsSold u
+ON p.product_id = u.product_id 
+AND u.purchase_date BETWEEN p.start_date AND p.end_date
+GROUP BY p.product_id;
 ****************************************************************************************************
 
 Table: Project
@@ -1500,8 +1509,6 @@ The customer id 3 has a first order with delivery id 5 and it is scheduled.
 The customer id 4 has a first order with delivery id 7 and it is immediate.
 Hence, half the customers have immediate first orders.
 
-
-
 WITH MinOrderDates AS (
     SELECT customer_id, MIN(order_date) AS min_order_date
     FROM Delivery
@@ -1548,6 +1555,46 @@ SELECT DISTINCT
     ) 
      AS immediate_percentage 
 FROM Scheduled
+
+dalsi reseni WITH MyCTE AS
+(
+    SELECT  
+        ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY order_date ASC) AS first_order,
+        CASE
+            WHEN order_date = customer_pref_delivery_date THEN 'immediate' 
+            ELSE 'scheduled'
+        END AS order_characteristic
+    FROM Delivery     
+)
+SELECT 
+    ROUND(
+        COUNT(*) * 100.0 / 
+        (SELECT COUNT(*) FROM MyCTE WHERE first_order = 1), 
+        2
+    ) AS immediate_percentage
+FROM MyCTE
+GROUP BY first_order, order_characteristic
+HAVING first_order = 1 AND order_characteristic = 'immediate';
+
+Grok to upravil takto:
+WITH MyCTE AS
+(
+    SELECT  
+        ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY order_date ASC) AS first_order,
+        CASE
+            WHEN order_date = customer_pref_delivery_date THEN 'immediate' 
+            ELSE 'scheduled'
+        END AS order_characteristic
+    FROM Delivery     
+)
+SELECT DISTINCT
+    ROUND(
+        (SELECT COUNT(*) FROM MyCTE WHERE first_order = 1 AND order_characteristic = 'immediate') * 100.0 / 
+        (SELECT COUNT(*) FROM MyCTE WHERE first_order = 1), 
+        2
+    ) AS immediate_percentage
+FROM MyCTE
+WHERE first_order = 1;
 
 
 ***************************************************************************
