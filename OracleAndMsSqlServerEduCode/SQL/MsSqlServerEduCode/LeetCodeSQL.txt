@@ -1717,7 +1717,25 @@ SELECT
     2) AS fraction
 FROM ConsecutiveDays;
 
-
+dalsi reseni Grok:
+WITH first_login AS (
+    SELECT 
+        player_id,
+        MIN(event_date) AS first_date
+    FROM Activity
+    GROUP BY player_id
+),
+consecutive AS (
+    SELECT 
+        f.player_id
+    FROM first_login f
+    JOIN Activity a 
+      ON a.player_id = f.player_id 
+     AND a.event_date = DATEADD(day, 1, f.first_date)
+)
+SELECT 
+    ROUND(COUNT(c.player_id) * 1.0 / (SELECT COUNT(DISTINCT player_id) FROM Activity), 2) AS fraction
+FROM consecutive c;
 ***********************************************************************************
 
 Table: Teacher
@@ -1855,7 +1873,7 @@ FROM Activity
 GROUP BY activity_date
 HAVING activity_date BETWEEN DATEADD(day, -29, '2019-07-27') AND '2019-07-27'
 
-zajimave, ze tohle je rychlejsi:
+nebo...
 WITH CTE AS
 (
     SELECT 
@@ -1882,6 +1900,52 @@ SELECT day, (SUM(count)) AS active_users
 FROM CTE
 GROUP BY day 
 HAVING day IS NOT NULL
+
+****
+WITH MyCTE AS
+(
+    SELECT user_id, activity_date AS [day], activity_type
+    FROM Activity 
+    WHERE activity_date <= '2019-07-27' AND activity_date >= '2019-06-28' AND activity_date IS NOT NULL
+),
+MyCTE1 AS
+(
+    SELECT [day],
+    (
+        COUNT(DISTINCT user_id)
+    )
+    AS active_users  
+    FROM MyCTE
+    GROUP BY day, user_id
+)
+
+SELECT [day],
+(
+    COUNT(active_users)
+) 
+AS active_users  
+FROM MyCTE1
+GROUP BY day
+****
+
+WITH MyCTE AS
+(
+    SELECT activity_date AS day, COUNT(DISTINCT user_id) AS active_users
+    FROM Activity 
+    GROUP BY activity_date, user_id  
+    HAVING activity_date BETWEEN '2019-06-28' AND '2019-07-27'
+)
+
+SELECT day, COUNT(active_users) AS active_users 
+FROM MyCTE 
+GROUP BY day, active_users
+HAVING active_users IS NOT NULL
+
+***
+SELECT activity_date AS day, COUNT(DISTINCT user_id) AS active_users
+FROM Activity
+WHERE activity_date BETWEEN '2019-06-28' AND '2019-07-27'
+GROUP BY activity_date;
 
 ***********************************************************************************************
 
@@ -2002,6 +2066,21 @@ SELECT product_id, year AS first_year, quantity, price
 FROM MyCTE
 WHERE rank = 1
 
+WITH MYCTE AS
+(
+    SELECT product_id, year,
+    (
+         DENSE_RANK() OVER (PARTITION BY product_id ORDER BY year)
+    )
+    AS rn,
+    quantity, price
+    FROM Sales      
+)
+
+SELECT product_id, year AS first_year, quantity, price
+FROM MYCTE    
+WHERE rn = 1
+
 *********************************************************************************
 
 Table: Courses
@@ -2062,6 +2141,22 @@ SELECT class
 FROM Courses
 GROUP BY class
 HAVING COUNT(class) >= 5 --tohle je rychlejsi
+
+vcil neco komplikovaneho...
+WITH MyCTE AS
+(
+    SELECT 
+        CASE 
+            WHEN (ROW_NUMBER() OVER (PARTITION BY class ORDER BY class)) >= 5
+            THEN class
+            ELSE NULL
+        END AS class 
+    FROM Courses  
+)
+
+SELECT DISTINCT class
+FROM MyCTE
+WHERE class IS NOT NULL
 
 
 *************************************************************************
@@ -2356,6 +2451,36 @@ FROM (
 GROUP BY customer_id  
 HAVING COUNT(product_key) = (SELECT COUNT(product_key) FROM Product);
 
+*******
+Priklad funguje s COUNT, ale nejak se mi to nezda, dle mne by reseni melo byt principialne jine
+
+SELECT c.customer_id
+FROM Customer AS c
+GROUP BY c.customer_id
+HAVING NOT EXISTS (
+    SELECT 1
+    FROM Product AS p
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM Customer AS c2
+        WHERE c2.customer_id = c.customer_id
+          AND c2.product_key = p.product_key
+    )
+);
+
+SELECT DISTINCT c.customer_id
+FROM Customer AS c
+WHERE NOT EXISTS (
+    SELECT p.product_key
+    FROM Product AS p
+    EXCEPT
+    SELECT c2.product_key
+    FROM Customer AS c2
+    WHERE c2.customer_id = c.customer_id
+);
+
+Tohle navrhl copilot a funguje.
+
 **********************************************************************************
 
 
@@ -2478,6 +2603,42 @@ INNER JOIN MyCTE c
 ON c.reports_to = e.employee_id 
 GROUP BY e.employee_id, e.name 
 ORDER BY e.employee_id ASC
+
+po nejake dobe mooje vlastni reseni...
+WITH MyCTE AS
+(
+    SELECT DISTINCT e1.employee_id, e1.name
+    FROM Employees e1   
+    JOIN Employees e2
+    ON e1.employee_id = e2.reports_to
+),
+MyCTE1 AS
+(
+    SELECT reports_to AS employee_id, 
+        COUNT(reports_to) AS reports_count,
+        ROUND(AVG(age * 1.0), 0) AS average_age
+    FROM Employees   
+    GROUP BY reports_to
+    HAVING reports_to IS NOT NULL
+)
+
+SELECT c1.employee_id, c.name, c1.reports_count, c1.average_age  
+FROM MyCTE c
+JOIN MyCTE1 c1
+ON c1.employee_id = c.employee_id
+
+Grok z teho zrobil toto:
+
+SELECT 
+    e.reports_to AS employee_id,
+    m.name,
+    COUNT(*) AS reports_count,
+    ROUND(AVG(e.age * 1.0), 0) AS average_age
+FROM Employees e
+JOIN Employees m ON e.reports_to = m.employee_id
+WHERE e.reports_to IS NOT NULL
+GROUP BY e.reports_to, m.name
+ORDER BY e.reports_to;
 
 *********************************************************************************************************
 
