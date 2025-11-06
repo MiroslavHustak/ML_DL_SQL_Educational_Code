@@ -2738,6 +2738,32 @@ WHERE myRank = 1
 
 The query using ROW_NUMBER() in a CTE will likely perform better, especially on larger datasets, because it avoids the expensive aggregation and distinct operations.
 
+po delsi dobe...
+WITH MyCTE1 AS
+(
+    SELECT COUNT(employee_id) AS count, employee_id
+    FROM Employee  
+    GROUP BY employee_id  
+    HAVING COUNT(employee_id) = 1 
+),
+MyCTE2 AS
+(
+    SELECT c1.employee_id, e.department_id  
+    FROM MyCTE1 c1
+    JOIN Employee e
+    ON c1.employee_id = e.employee_id 
+), 
+MyCTE3 AS
+(
+    SELECT employee_id, department_id 
+    FROM Employee 
+    WHERE primary_flag = 'Y'
+)
+
+SELECT employee_id, department_id FROM MyCTE2
+UNION
+SELECT employee_id, department_id FROM MyCTE3;
+
 *************************************************************************
 Table: Triangle
 
@@ -2951,7 +2977,7 @@ GROUP BY product_id
 HAVING MIN(change_date) > '2019-08-16'
 
 
-Moje slozitejsi reseni, kupodivu rychlejsi
+Moje slozitejsi reseni
 WITH CTE1 AS
 (
     SELECT 
@@ -3045,6 +3071,46 @@ LatestPrices AS
 SELECT product_id, price
 FROM LatestPrices
 ORDER BY product_id
+
+Po delsim case jsem vymyslel toto:
+WITH MyCTE AS 
+(
+    SELECT product_id, 
+        CASE 
+            WHEN change_date <= '2019-08-16' THEN new_price ELSE 10
+        END AS price,
+        CASE 
+            WHEN change_date <= '2019-08-16' THEN change_date ELSE NULL
+        END AS change_date
+    FROM Products
+),
+MyCTE1 AS
+(
+    SELECT product_id, price,
+        ROW_NUMBER() OVER(PARTITION BY product_id ORDER BY change_date DESC)
+        AS rn, change_date
+    FROM MyCTE
+)
+
+SELECT product_id, price 
+FROM MyCTE1
+WHERE rn = 1
+
+
+Grok to vylepsil na
+WITH RankedPrices AS (
+    SELECT 
+        product_id,
+        new_price AS price,
+        ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY change_date DESC) AS rn
+    FROM Products
+    WHERE change_date <= '2019-08-16'
+)
+SELECT 
+    p.product_id,
+    COALESCE(r.price, 10) AS price
+FROM (SELECT DISTINCT product_id FROM Products) p
+LEFT JOIN RankedPrices r ON p.product_id = r.product_id AND r.rn = 1;
 
 *******************************************************************************
 *******************************************************************************
@@ -3180,6 +3246,26 @@ WHERE RunningTotal <= 1000
 SELECT person_name 
 FROM MyCTE1
 WHERE turn = (SELECT MAX(turn) FROM MyCTE1)
+
+Posledni moje reseni s ekvivalentem List.scan - konec se lisi
+WITH MyCTE AS 
+(
+    SELECT
+    person_id, person_name, weight, turn,
+    SUM(weight) OVER (ORDER BY turn ROWS UNBOUNDED PRECEDING) AS RunningTotal
+    FROM Queue 
+),
+MyCTE1 AS
+(  
+    SELECT person_name, RunningTotal
+    FROM MyCTE
+    GROUP BY RunningTotal, person_name
+    HAVING RunningTotal <= 1000
+)
+
+SELECT TOP 1 person_name
+FROM MyCTE1
+ORDER BY RunningTotal DESC;
 
 
 ********************************************************
