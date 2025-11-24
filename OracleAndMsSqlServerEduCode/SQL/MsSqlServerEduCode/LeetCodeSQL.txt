@@ -3421,6 +3421,48 @@ FROM Categories c
 LEFT JOIN Categories1 a 
 ON c.category = a.category;
 
+po roce dalsi, tentokrat moje reseni
+WITH MyCTE AS
+(
+    SELECT 
+        SUM(CASE WHEN income < 20000 THEN 1 ELSE 0 END) AS count_low,
+        SUM(CASE WHEN income BETWEEN 20000 AND 50000 THEN 1 ELSE 0 END) AS count_avg,
+        SUM(CASE WHEN income > 50000 THEN 1 ELSE 0 END) AS count_high
+    FROM Accounts
+)
+SELECT 
+    CASE category
+        WHEN 'count_low'  THEN 'Low Salary'
+        WHEN 'count_avg'  THEN 'Average Salary'
+        WHEN 'count_high' THEN 'High Salary'   -- <-- Your label here
+    END AS category,
+    [accounts_count]
+FROM MyCTE
+UNPIVOT
+(
+    [accounts_count] FOR category IN (count_low, count_avg, count_high)
+) u;
+
+varianta s CROSS APPLY:
+WITH MyCTE AS
+(
+    SELECT 
+        SUM(CASE WHEN income < 20000 THEN 1 ELSE 0 END) AS count_low,
+        SUM(CASE WHEN income BETWEEN 20000 AND 50000 THEN 1 ELSE 0 END) AS count_avg,
+        SUM(CASE WHEN income > 50000 THEN 1 ELSE 0 END) AS count_high
+    FROM Accounts
+)
+SELECT 
+    category,
+    accounts_count
+FROM MyCTE
+CROSS APPLY (
+    VALUES 
+        ('Low Salary',     count_low),
+        ('Average Salary', count_avg),
+        ('High Salary',    count_high)
+) AS v(category, accounts_count);
+
 ******************************************************************************
 Table: Employees
 
@@ -3472,6 +3514,14 @@ SELECT employee_id
 FROM Employees
 WHERE salary < 30000 AND manager_id NOT IN (SELECT employee_id FROM Employees)
 ORDER BY employee_id;
+
+SELECT e.employee_id
+FROM Employees e
+LEFT JOIN Employees m ON e.manager_id = m.employee_id
+WHERE e.salary < 30000
+  AND e.manager_id IS NOT NULL
+  AND m.employee_id IS NULL
+ORDER BY e.employee_id;
 
 ******************************************
 
@@ -3641,6 +3691,29 @@ FROM MyCTE
 GROUP BY id, student, count   
 ORDER BY id
 
+dalsi moje reseni bez copilots
+WITH MyCTE AS
+(
+    SELECT 
+        CASE
+            WHEN id % 2 = 0 THEN id - 1 
+            ELSE 
+                CASE
+                    WHEN id = (SELECT TOP 1 id FROM Seat ORDER BY id DESC)
+                    THEN 
+                        CASE
+                            WHEN id % 2 = 0 THEN id + 1 
+                            ELSE id
+                        END
+                    ELSE id + 1
+                END
+        END AS id,           
+        student
+    FROM Seat    
+)
+SELECT * FROM MyCTE
+ORDER BY id;
+
 
 ******************************************************************************
 
@@ -3687,9 +3760,7 @@ Write a solution to:
 Find the name of the user who has rated the greatest number of movies. In case of a tie, return the lexicographically smaller user name.
 Find the movie name with the highest average rating in February 2020. In case of a tie, return the lexicographically smaller movie name.
 The result format is in the following example.
-
  
-
 Example 1:
 
 Input: 
@@ -3759,7 +3830,7 @@ FROM
     ORDER BY (CAST(SUM(MR.rating) AS FLOAT) / CAST(COUNT(MR.user_id) AS FLOAT)) DESC, M.title ASC
 ) AS A2
 
-rychlejsi zcela moje reseni:
+zcela moje reseni:
 WITH CTE AS
 (
     SELECT mr.movie_id, m.title, mr.user_id, u.name, mr.rating, mr.created_at
@@ -3915,6 +3986,60 @@ MaxMovie AS (
 SELECT name AS results FROM MaxUser
 UNION ALL
 SELECT title AS results FROM MaxMovie;
+
+po nejake dobe
+WITH MyCTE AS
+(
+    SELECT mr.movie_id, m.title, mr.user_id, u.name, mr.rating, mr.created_at  
+    FROM MovieRating mr
+    INNER JOIN Movies m ON m.movie_id = mr.movie_id
+    INNER JOIN Users u ON u.user_id = mr.user_id
+),
+MyCTE1 AS
+(
+    SELECT name, COUNT(*) AS count
+    FROM MyCTE
+    GROUP BY name
+),
+MyCTE2 AS
+(
+    SELECT name
+    FROM MyCTE1
+    WHERE count = (SELECT MAX(count) FROM MyCTE1)     
+),
+MyCTE3 AS
+(
+    SELECT rating, title
+    FROM MyCTE 
+    WHERE created_at BETWEEN '2020-02-01' AND '2020-02-29'  
+),
+MyCTE4 AS
+(
+    SELECT AVG(CAST(rating AS FLOAT)) AS avg_rating, title
+    FROM MyCTE3
+    GROUP BY title
+),
+MyCTE5 AS
+(
+    SELECT TOP 1 name
+    FROM MyCTE2
+    ORDER BY name ASC
+),
+MyCTE6 AS
+(
+    SELECT TOP 1 title
+    FROM MyCTE4
+    WHERE avg_rating = (SELECT MAX(avg_rating) FROM MyCTE4)
+    ORDER BY title ASC
+)
+
+SELECT name AS results 
+FROM MyCTE5
+
+UNION ALL
+
+SELECT title AS results 
+FROM MyCTE6 
 
 
 *******************************************************************************
