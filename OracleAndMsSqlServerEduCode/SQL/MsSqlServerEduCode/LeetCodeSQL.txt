@@ -4188,6 +4188,48 @@ FROM MyCTE
 WHERE rn >= 7 
 ORDER BY visited_on;
 
+dalsi reseni, copilot pouze hints, ne kod:
+
+/*
+Tento kod je pouze "staticky" pro jeden radek, tady neni mozny cyklus jako u normalnich jazyku s n+1 iteracemi, 
+proto je potreba pouzit okno s pevnou velikosti 7 dni a pak vyfiltrovat jen ty radky, kde je opravdu 7 dni v okne (pomoci COUNT(*)).
+*/
+WITH MyCTE1 AS 
+(
+    SELECT DISTINCT 
+        MAX(visited_on) OVER () AS visited_on,
+        SUM(amount) OVER () AS amount,
+        ROUND(
+            AVG(CAST(amount AS FLOAT)) OVER (),
+            2
+        ) AS average_amount
+    FROM Customer
+    WHERE visited_on BETWEEN 
+        (SELECT MIN(visited_on) FROM Customer)
+        AND DATEADD(day, 6, (SELECT MIN(visited_on) FROM Customer))
+),
+*/
+WITH MyCTE2 AS
+(
+    SELECT visited_on, SUM (CAST(amount AS FLOAT)) AS sum2
+    FROM Customer
+    GROUP BY visited_on 
+),
+MyCTE3 AS
+(
+    SELECT 
+        visited_on,
+        SUM(sum2) OVER (ORDER BY visited_on ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS amount,
+        ROUND((AVG(CAST(sum2 AS FLOAT)) OVER (ORDER BY visited_on ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)), 2) AS average_amount,
+        COUNT(*) OVER (ORDER BY visited_on ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS window_row_count 
+    FROM MyCTE2
+)
+
+SELECT visited_on, amount, average_amount
+FROM MyCTE3
+WHERE window_row_count = 7
+ORDER BY visited_on ASC
+
 ************************************************************************************************
 
 Table: RequestAccepted
@@ -4296,6 +4338,36 @@ WITH CTE1 AS
 
 SELECT id, num FROM CTE2
 WHERE num = (SELECT MAX(num) FROM CTE2)
+
+tady jsem po case neco vymyslel sam
+WITH MYCTE AS
+(
+    SELECT requester_id 
+    FROM RequestAccepted
+
+    UNION ALL
+
+    SELECT accepter_id AS requester_id 
+    FROM RequestAccepted
+),
+MyCTE1 AS
+(
+    SELECT requester_id, COUNT(*) AS cnt
+    FROM MyCTE
+    GROUP BY requester_id
+),
+MyCTE2 AS
+(
+    SELECT 
+        requester_id AS id, 
+        MAX(cnt) AS num
+    FROM MyCTE1
+    GROUP BY requester_id
+)
+
+SELECT id, num
+FROM MyCTE2
+WHERE num = (SELECT MAX(num) FROM MyCTE2)
 
 ********************************************************
 
