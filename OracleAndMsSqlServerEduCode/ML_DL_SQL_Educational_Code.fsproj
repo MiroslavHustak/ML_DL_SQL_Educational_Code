@@ -15,7 +15,6 @@
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT-2-like_LLM\CustomTokenizer.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT-2-like_LLM\DataSetSimulation.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT-2-like_LLM\Transformer2.fs" />
-    <Content Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT_4_like_LLM\ReadMe.txt" />
     <Content Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-2-like LLM\Notes.txt" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-2-like LLM\TransformerEducation2.fs" />
     <Compile Include="NeuralNetworks\DeepLearning\TorchSharp\EducationalCode\GPT-2-like LLM\TransformerEducation1.fs" />
@@ -87,6 +86,10 @@
 
   <ItemGroup>
     <PackageReference Update="FSharp.Core" Version="8.0.200" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="NeuralNetworks\DeepLearning\TorchSharp\LLM\GPT_4_like_LLM\" />
   </ItemGroup>
 
 </Project>
