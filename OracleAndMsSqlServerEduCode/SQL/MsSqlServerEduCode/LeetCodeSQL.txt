@@ -4489,6 +4489,33 @@ WITH MyCTE AS
 SELECT ROUND (SUM(tiv_2016), 2) AS tiv_2016
 FROM MyCTE
 
+dalsi reseni, castecne copilot
+WITH MyCTE1 AS
+(
+    SELECT tiv_2015, tiv_2016, lat, lon
+    FROM Insurance
+),
+MyCTE2 AS
+(
+    SELECT 
+        tiv_2015,
+        tiv_2016,
+        lat,
+        lon,
+        COUNT(*) OVER (PARTITION BY tiv_2015)     AS cnt_tiv2015,
+        COUNT(*) OVER (PARTITION BY lat, lon)     AS cnt_pair
+    FROM MyCTE1
+),
+MyCTE3 AS
+(
+    SELECT tiv_2015, tiv_2016
+    FROM MyCTE2
+    WHERE cnt_tiv2015 > 1
+      AND cnt_pair = 1
+)
+SELECT ROUND(SUM(tiv_2016), 2) AS tiv_2016
+FROM MyCTE3
+
 
 *********************************************************
 
@@ -4633,6 +4660,24 @@ SELECT Department, Employee, Salary
 FROM RankedEmployees
 WHERE Rank <= 3
 ORDER BY Department, Salary DESC;
+
+po delsi dobe zcela sam:
+WITH MyCTE1 AS
+(
+    SELECT d.name AS Department, e.name AS Employee, salary AS Salary
+    FROM Employee e
+    INNER JOIN Department d
+    ON d.id = e.departmentId
+),
+MyCTE2 AS
+(
+    SELECT Department, Employee, Salary,
+        DENSE_RANK() OVER (PARTITION BY Department ORDER BY SALARY DESC) AS rn
+    FROM MyCTE1
+)
+
+SELECT Department, Employee, Salary FROM MyCTE2
+WHERE rn BETWEEN 1 AND 3
 
 ********************************************************************************************************
 Table: Users
