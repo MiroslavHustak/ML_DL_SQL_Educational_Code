@@ -35,7 +35,7 @@ The foundation is my own from-scratch [GPT-2-like transformer](https://github.co
 - groundwork for LR schedulers
 
 All of this still completely un-optimised. Still on the to-do list (quite a lot, hence the call for help):
-- flash Attention and kernel fusions (will probably have to be written in C++; I’d love to do it in Rust which I’m learning, but I’m not sure it’s realistic)
+- flash attention and kernel fusions (will probably have to be written in C++; I’d love to do it in Rust which I’m learning, but I’m not sure it’s realistic)
 - proper real-world tokenizer (right now there’s only code simulating simple tokenizer)
 - loading existing open-weight models
 - full data-pre-processing pipeline for fine-tuning
