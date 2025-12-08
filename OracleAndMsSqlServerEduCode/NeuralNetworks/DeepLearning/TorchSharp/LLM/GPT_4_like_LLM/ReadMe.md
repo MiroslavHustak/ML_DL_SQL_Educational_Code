@@ -30,11 +30,11 @@ You are ideally from the Czech Republic, Slovakia, Poland, Austria or Hungary �
 We’ll be using TorchSharp, with the goal of doing fully local fine-tuning of models whose data must never leave the user’s “secure environment”. I can’t promise it will turn out exactly as I imagine, but if it does, we can seriously think about joint monetisation. The foundation is my own from-scratch [GPT-2-like transformer](https://github.com/MiroslavHustak/ML_DL_SQL_Educational_Code/tree/master/OracleAndMsSqlServerEduCode/NeuralNetworks/DeepLearning/TorchSharp/LLM/GPT-2-like_LLM) (same architecture, obviously not the same performance). 
 
 In my private repo I’ve already added:
-- Rotary positional embeddings (RoPE)
-- Root mean square layer normalization (RMSNorm)
+- rotary positional embeddings (RoPE)
+- root mean square layer normalization (RMSNorm)
 - LoRA
-- Proper batching
-- Groundwork for LR schedulers
+- proper batching
+- groundwork for LR schedulers
 
 All of this still completely un-optimised. 
 
