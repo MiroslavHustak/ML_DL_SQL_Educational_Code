@@ -1,4 +1,4 @@
-﻿﻿Access to the GPT-4-like code is restricted. 
+﻿Access to the GPT-4-like code is restricted.
 
 **Please scroll down for the English version :-)** 
 
