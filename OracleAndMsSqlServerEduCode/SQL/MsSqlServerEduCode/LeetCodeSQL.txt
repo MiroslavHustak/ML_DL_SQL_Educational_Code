@@ -5123,6 +5123,37 @@ GROUP BY sell_date
 
 ***************************************************************************************
 
+/* Write your T-SQL query statement below */
+/*
+-- STRING_AGG(DISTINCT funguje pry jen v SQL 2022
+WITH MyCTE AS 
+(
+    SELECT DISTINCT sell_date, 
+        COUNT(DISTINCT product) AS num_sold,
+        STRING_AGG(DISTINCT product, ',') WITHIN GROUP (ORDER BY product) AS products 
+    FROM Activities
+    GROUP BY sell_date  
+)
+
+SELECT * FROM MyCTE
+*/
+
+WITH DistinctProducts AS (
+    SELECT sell_date, product
+    FROM Activities
+    GROUP BY sell_date, product   -- keeps only one row per product per date
+)
+SELECT 
+    sell_date,
+    COUNT(*) AS num_sold,           -- same as COUNT(DISTINCT product)
+    STRING_AGG(product, ',') 
+        WITHIN GROUP (ORDER BY product) AS products
+FROM DistinctProducts
+GROUP BY sell_date
+
+
+***************************************************************************************
+
  |
 +---------------+---------+
 | product_id    | int     |
@@ -5272,7 +5303,6 @@ WHERE o.order_date BETWEEN '2020-02-01' AND '2020-02-29'
 GROUP BY p.product_id, p.product_name
 HAVING SUM(o.unit) >= 100;
 
-muj delsi kod, ale 2x rychlejsi:
 WITH CTE AS
 (
     SELECT p.product_id, p.product_name, p.product_category, o.order_date, o.unit
@@ -5303,6 +5333,21 @@ SELECT product_name, SUM(unit) AS unit
 FROM MyCTE
 GROUP BY product_name
 HAVING SUM(unit) >= 100 
+
+nebo takto:
+WITH MyCTE AS
+(
+    SELECT p.product_id, p.product_name, o.order_date, o.unit 
+    FROM Products p
+    INNER JOIN Orders o
+    ON o.product_id = p.product_id    
+    WHERE o.order_date BETWEEN '2020-02-01' AND '2020-02-29'
+)
+
+SELECT product_name, SUM(unit) AS unit
+FROM MyCTE
+GROUP BY product_name
+HAVING SUM(unit) >= 100
 
 **************************************************************************************************************
 
