@@ -4971,6 +4971,21 @@ SELECT
         ELSE (SELECT SecondHighestSalary FROM FilteredCTE) 
     END AS SecondHighestSalary
 
+********************************************************************
+WITH Ranked AS (
+    SELECT DISTINCT salary,
+           DENSE_RANK() OVER (ORDER BY salary DESC) AS rnk
+    FROM Employee
+)
+
+SELECT 
+    CASE 
+        WHEN COUNT(*) = 0 THEN NULL
+        ELSE MAX(salary)
+    END AS SecondHighestSalary
+FROM Ranked
+WHERE rnk = 2
+
 *********************************************************************
 
 Table Activities:
