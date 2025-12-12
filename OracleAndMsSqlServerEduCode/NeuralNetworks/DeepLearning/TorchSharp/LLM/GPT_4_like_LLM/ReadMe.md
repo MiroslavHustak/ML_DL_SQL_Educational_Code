@@ -11,7 +11,7 @@ Nemá někdo (nejlépe z ČR, SR, PL, AT, HU, to abychom neměli k sobě daleko)
 - batching
 - přípravu pro learning rate scheduler
 
-Vše bez optimalizace parametrů.
+Vše je ještě bez optimalizace parametrů.
 
 Zbývá ještě minimálně:
 - flash attention a fuse ops (zřejmě bude nutné to udělat v C++, rád bych sice Rust, který se učím, ale nevím, jestli to v něm půjde, asi ne ...)
