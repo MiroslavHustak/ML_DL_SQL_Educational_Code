@@ -23,7 +23,7 @@ Konkurence samozřejmě existuje (např. Hugging Face Transformers + PEFT + vLLM
 
 **EN**
 
-Looking for a collaborator to join my side project: a “mini LLM” completely in .NET (and in F#).You are ideally from the Czech Republic, Slovakia, Poland, Austria or Hungary – the closer the better; however if you're based somewhere else and your time zone isn’t too painful for a Central European, feel free to reach out too.
+Looking for a collaborator to join my side project: a “mini LLM” completely in .NET (and in F#). You are ideally from the Czech Republic, Slovakia, Poland, Austria or Hungary – the closer the better; however if you're based somewhere else and your time zone isn’t too painful for a Central European, feel free to reach out too.
 
 We’ll be using TorchSharp, with the goal of doing fully local fine-tuning of models whose data must never leave the user’s “secure environment”. I can’t promise it will turn out exactly as I imagine, but if it does, we can seriously think about joint monetisation.
 
