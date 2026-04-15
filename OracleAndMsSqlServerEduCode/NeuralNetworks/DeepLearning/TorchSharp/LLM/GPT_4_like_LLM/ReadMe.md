@@ -4,7 +4,11 @@
  
  **CZ**
  
-Nemá někdo (nejlépe z ČR, SR, PL, AT, HU, to abychom neměli k sobě daleko) chuť se přidat k mému side-projektu "mini LLMka" pro .NET v [tomto .NET jazyce](https://github.com/MiroslavHustak/FAQ) a TorchSharp pro lokální fine-tuning dat (pro .NET-only prostředí), která nemohou opustit "bezpečnostní prostor" uživatele? Nemohu slíbit, že to bude fungovat dle mých představ, ale pokud ano, můžeme uvažovat o společné monetizaci projektu. Bude to založeno na tomto [GPT-2-like kódu](https://github.com/MiroslavHustak/ML_DL_SQL_Educational_Code/tree/master/OracleAndMsSqlServerEduCode/NeuralNetworks/DeepLearning/TorchSharp/LLM/GPT-2-like_LLM) (architekturou, ne výkonem) s přidanými prvky používaných v moderních modelech, už jsem do kódu v private repository přidal:
+Nemá někdo (nejlépe z ČR, SR, PL, AT, HU, to abychom neměli k sobě daleko) chuť se přidat k mému side-projektu "mini LLMka" pro .NET v [tomto .NET jazyce](https://github.com/MiroslavHustak/FAQ) a TorchSharp pro lokální fine-tuning dat (pro .NET-only prostředí), která nemohou opustit "bezpečnostní prostor" uživatele? 
+
+Ano, půjdeme proti proudu (zatím, i když už zdaleka nejsme sami) v době, kdy všichni houfně vytvářejí tzv. AI agents.
+
+Nemohu slíbit, že to bude fungovat dle mých představ, ale pokud ano, můžeme uvažovat o společné monetizaci projektu. Bude to založeno na tomto [GPT-2-like kódu](https://github.com/MiroslavHustak/ML_DL_SQL_Educational_Code/tree/master/OracleAndMsSqlServerEduCode/NeuralNetworks/DeepLearning/TorchSharp/LLM/GPT-2-like_LLM) (architekturou, ne výkonem) s přidanými prvky používaných v moderních modelech, už jsem do kódu v private repository přidal:
 - rotary positional embeddings
 - root mean square layer normalization (RMSNorm)
 - LoRA
